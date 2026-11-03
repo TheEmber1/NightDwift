@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="theme-color" content="#10151b">
-<title>Drift</title>
+<meta name="theme-color" content="#070a14">
+<title>NightDwift</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700;800&display=swap" rel="stylesheet">
@@ -15,9 +15,10 @@
   <canvas id="c"></canvas>
   <div id="hud">
     <div id="tl"></div><div id="tr"></div><div id="bl"></div><div id="br"></div><div id="msg"></div>
+    <canvas id="minimap" width="240" height="160" aria-label="Cop chase minimap"></canvas>
   </div>
   <div id="menu">
-    <h1>DRIFT<i>.</i></h1>
+    <h1>NIGHT<i>DWIFT</i></h1>
     <div id="menu-items"></div>
     <canvas id="car-preview" width="720" height="380"></canvas>
     <p id="best"></p>
@@ -31,6 +32,7 @@
 <script src="js/cars.js"></script>
 <script src="js/tracks.js"></script>
 <script src="js/physics.js"></script>
+<script src="js/chase.js"></script>
 <script src="js/game.js"></script>
 </body>
 </html>

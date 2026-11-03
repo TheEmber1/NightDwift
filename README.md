@@ -1,7 +1,7 @@
 # NightDwift
 
-A browser-based top-down drifting game. Choose a car and track, then race laps
-or practice in freeplay.
+NightDwift is a midnight-styled, browser-based top-down drifting game. Race laps,
+practice freely, or take on an endless city and an escalating police pursuit.
 
 ## Run
 
@@ -22,14 +22,27 @@ Then visit `http://localhost:8000/dwifft.html`.
 - **Menu:** W / S or the D-pad to choose; Enter / Space to confirm
 - Standard gamepads are supported
 
+## Modes
+
+- **Time Attack:** race laps on a chosen track and set a best time.
+- **Freeplay:** practice drifting without a timer.
+- **Cop Chase:** survive as long as possible in an endless, procedurally
+  generated city. Police pursue and reinforce over time; touching one ends the
+  run. Drift into new streets to score; the same road tiles only pay once, so
+  repeating donuts won't farm points. Drift chains raise a capped multiplier
+  and confuse nearby cops. The minimap shows nearby streets, buildings, police,
+  and your car. Survival time is shown separately, and the best chase score is
+  saved.
+
 ## Project files
 
 - `dwifft.html` — page structure and script loading order
 - `styles.css` — game and menu styles
 - `js/input.js` — keyboard and gamepad controls
 - `js/cars.js` — car definitions and drawing
-- `js/tracks.js` — track definitions and rendering
+- `js/tracks.js` — track definitions and streamed procedural city
 - `js/physics.js` — car handling and physics
+- `js/chase.js` — police pursuit behavior and escalating spawns
 - `js/game.js` — game state, menus, simulation, and rendering loop
 - `js/error-handler.js` — displays runtime errors in the menu
 

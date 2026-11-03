@@ -2,7 +2,7 @@
   const $ = id => document.getElementById(id);
   const cvEl = $('c'), ctx = cvEl.getContext('2d'), stage = $('stage');
   const H = 1 / 120, ZERO = { steer: 0, throttle: 0, brake: 0, hand: 0 };
-  const FREE_GROUND = '#2a3440';
+  const FREE_GROUND = '#080c17';
 
   // canvas always fills the window; the world is scaled so at least 320x180 units are visible
   let dpr = 1;
@@ -27,6 +27,8 @@
   const car = new Car();
   car.setCfg(CARS[0].cfg);
   let SPEC = CARS[0].spec;
+  const chase = new CopChase();
+  const chaseScore = new ChaseScore();
 
   let trackId = TRACKS[0].id;
   let TR = TRACK_MAP[trackId];
@@ -53,6 +55,7 @@
   const pv = [{ ok: false, x: 0, y: 0 }, { ok: false, x: 0, y: 0 }];
   const parts = [];
   const el = { tl: $('tl'), tr: $('tr'), bl: $('bl'), br: $('br'), msg: $('msg') };
+  const minimap = $('minimap'), mapCtx = minimap.getContext('2d');
   const menuItemsEl = $('menu-items');
   const preview = $('car-preview'), pctx = preview.getContext('2d');
 
@@ -68,6 +71,7 @@
     if (menuMode === 'main') return [
       { label: 'TIME ATTACK', action: () => { menuMode = 'tracks'; sel = 0; } },
       { label: 'FREEPLAY', action: () => start('free') },
+      { label: 'COP CHASE', action: () => start('chase') },
       { label: `<i class="dot" style="background:${SPEC.color}"></i>CAR: ${CARS[carIdx].name}`, action: () => { menuMode = 'cars'; sel = carIdx; } }
     ];
     if (menuMode === 'tracks') return TRACKS.map(tr => ({
@@ -88,12 +92,17 @@
       const s = TR.start;
       car.reset(s.x, s.y, s.a);
       state = 'count'; count = 3.99; t = lapT = 0; lap = 1; cp = 1;
+    } else if (m === 'chase') {
+      car.reset(400, 400, 0);
+      state = 'play'; t = lapT = 0;
+      chaseScore.reset();
+      chase.reset(car);
     } else {
       car.reset(0, 0, -Math.PI / 2);
       state = 'play';
     }
     cam.x = car.x; cam.y = car.y;
-    stage.className = '';
+    stage.className = m === 'chase' ? 'chase' : '';
   }
 
   function lapDone() {
@@ -120,15 +129,37 @@
     parts.push({ x, y, vx, vy, l: life, l0: life, kind: kind || 0 });
   }
 
+  function finishChase() {
+    state = 'done';
+    const score = Math.floor(chaseScore.points);
+    const record = getBest('chase');
+    const isRecord = !record.score || score > record.score;
+    if (isRecord) record.score = score;
+    best.chase = record;
+    save();
+    say(`BUSTED<br><span class="hl">${score.toLocaleString()} POINTS</span><small>SURVIVED ${fmt(t)}<br>DRIFTED ${Math.floor(chaseScore.totalDistance * .285).toLocaleString()} M · ${chaseScore.multiplier.toFixed(1)}× MULTIPLIER<br>${isRecord ? 'NEW CHASE RECORD!' : 'BEST ' + record.score.toLocaleString()}<br>R / TRIANGLE RETRY<br>ESC / OPTIONS MENU</small>`, 1e9);
+  }
+
   function sim(inp) {
     const i = state === 'play' ? inp : ZERO;
     const wasOn = car.on;
     car.step(i, H, mode === 'race' ? TR.on(car.x, car.y) : true);
+    if (mode === 'chase') {
+      const pos = CITY.resolve(car.x, car.y, 7);
+      car.x = pos.x; car.y = pos.y;
+      if (pos.hit) {
+        car.vx *= 0.78; car.vy *= 0.78; car.w *= 0.75;
+        shake = Math.max(shake, 0.18);
+      }
+    }
     const sp = car.speed, c = Math.cos(car.a), s = Math.sin(car.a);
 
     if (state === 'play') {
       t += H; lapT += H;
-      if (car.on && car.slip > 28 && sp > 30) {
+      if (mode === 'chase') {
+        chaseScore.step(car, H);
+        mult = chaseScore.multiplier;
+      } else if (car.on && car.slip > 28 && sp > 30) {
         const add = (car.slip - 18) * sp / 18 * H * mult;
         drift += add;
         if (car.slip > 40) mult = Math.min(4, mult + H * 0.7);
@@ -146,6 +177,9 @@
         if (Math.hypot(car.x - g[0], car.y - g[1]) < 52) {
           if (cp === TR.cps.length) { cp = 1; lapDone(); } else cp++;
         }
+      } else if (mode === 'chase') {
+        chase.step(car, H, chaseScore.confusion);
+        if (chase.cops.some(cop => Math.hypot(car.x - cop.x, car.y - cop.y) < 17)) finishChase();
       }
     }
 
@@ -186,12 +220,70 @@
       for (let gx = Math.floor(v.x0 / g); gx <= v.x1 / g; gx++) {
         const X = gx * g, Y = gy * g;
         if (gx % 5 === 0 && gy % 5 === 0) {
-          ctx.strokeStyle = 'rgba(255,106,61,.6)'; ctx.lineWidth = .7; ctx.lineCap = 'round';
+          ctx.strokeStyle = 'rgba(73,223,255,.55)'; ctx.lineWidth = .7; ctx.lineCap = 'round';
           ctx.beginPath(); ctx.moveTo(X - 3, Y); ctx.lineTo(X + 3, Y); ctx.moveTo(X, Y - 3); ctx.lineTo(X, Y + 3); ctx.stroke();
         } else {
-          ctx.fillStyle = 'rgba(255,255,255,.14)'; ctx.beginPath(); ctx.arc(X, Y, .8, 0, 7); ctx.fill();
+          ctx.fillStyle = 'rgba(122,161,205,.2)'; ctx.beginPath(); ctx.arc(X, Y, .8, 0, 7); ctx.fill();
         }
       }
+  }
+
+  function drawMinimap() {
+    if (mode !== 'chase') return;
+    const w = minimap.width, h = minimap.height, scale = Math.min((w - 12) / 1800, (h - 12) / 1200);
+    const x0 = car.x - w / scale / 2, y0 = car.y - h / scale / 2;
+    const x1 = x0 + w / scale, y1 = y0 + h / scale;
+    mapCtx.setTransform(1, 0, 0, 1, 0, 0);
+    mapCtx.clearRect(0, 0, w, h);
+    mapCtx.fillStyle = '#080d19';
+    mapCtx.fillRect(0, 0, w, h);
+    mapCtx.save();
+    mapCtx.beginPath();
+    mapCtx.rect(0, 0, w, h);
+    mapCtx.clip();
+    mapCtx.setTransform(scale, 0, 0, scale, w / 2 - car.x * scale, h / 2 - car.y * scale);
+
+    mapCtx.strokeStyle = '#1b3049';
+    mapCtx.lineWidth = CITY.roadWidth;
+    mapCtx.beginPath();
+    for (let x = Math.floor(x0 / CITY.blockSize) * CITY.blockSize; x <= x1; x += CITY.blockSize) {
+      mapCtx.moveTo(x, y0); mapCtx.lineTo(x, y1);
+    }
+    for (let y = Math.floor(y0 / CITY.blockSize) * CITY.blockSize; y <= y1; y += CITY.blockSize) {
+      mapCtx.moveTo(x0, y); mapCtx.lineTo(x1, y);
+    }
+    mapCtx.stroke();
+    for (const b of CITY.buildingsIn(x0, y0, x1, y1)) {
+      mapCtx.fillStyle = b.color;
+      mapCtx.fillRect(b.x, b.y, b.w, b.h);
+      mapCtx.strokeStyle = b.accent;
+      mapCtx.lineWidth = 3;
+      mapCtx.strokeRect(b.x, b.y, b.w, b.h);
+    }
+    for (const cop of chase.cops) {
+      mapCtx.fillStyle = 'rgba(255,54,94,.35)';
+      mapCtx.beginPath(); mapCtx.arc(cop.x, cop.y, 26, 0, Math.PI * 2); mapCtx.fill();
+      mapCtx.fillStyle = '#ff426b';
+      mapCtx.beginPath(); mapCtx.arc(cop.x, cop.y, 12, 0, Math.PI * 2); mapCtx.fill();
+    }
+    mapCtx.save();
+    mapCtx.translate(car.x, car.y);
+    mapCtx.rotate(car.a);
+    mapCtx.shadowColor = '#55efff';
+    mapCtx.shadowBlur = 14;
+    mapCtx.fillStyle = '#9bfbff';
+    mapCtx.beginPath();
+    mapCtx.moveTo(20, 0); mapCtx.lineTo(-11, -10); mapCtx.lineTo(-7, 0); mapCtx.lineTo(-11, 10);
+    mapCtx.closePath(); mapCtx.fill();
+    mapCtx.restore();
+    mapCtx.restore();
+    mapCtx.setTransform(1, 0, 0, 1, 0, 0);
+    mapCtx.strokeStyle = 'rgba(93,220,255,.3)';
+    mapCtx.lineWidth = 1;
+    mapCtx.beginPath();
+    mapCtx.moveTo(w / 2 - 4, h / 2); mapCtx.lineTo(w / 2 + 4, h / 2);
+    mapCtx.moveTo(w / 2, h / 2 - 4); mapCtx.lineTo(w / 2, h / 2 + 4);
+    mapCtx.stroke();
   }
 
   function draw() {
@@ -206,7 +298,10 @@
     ctx.fillRect(0, 0, cw, ch);
     ctx.setTransform(k, 0, 0, k, cw / 2 - cx * k, ch / 2 - cy * k);
 
-    if (mode === 'race') TR.drawGround(ctx, v); else drawFreeGround(v);
+    if (mode === 'race') TR.drawGround(ctx, v);
+    else if (mode === 'chase') CITY.drawGround(ctx, v, v);
+    else drawFreeGround(v);
+    if (mode === 'chase') CITY.drawBuildings(ctx, v);
 
     // tyre marks (one stroke, so overlaps never get darker)
     if (skn) {
@@ -231,6 +326,30 @@
     }
     ctx.globalAlpha = 1;
 
+    if (mode === 'chase') {
+      const sirenOn = Math.floor(performance.now() / 180) % 2;
+      for (let i = 0; i < chase.cops.length; i++) {
+        const cop = chase.cops[i];
+        drawCar(ctx, CARS[2].spec, cop.x, cop.y, cop.a, { shadow: true });
+        ctx.save();
+        ctx.translate(cop.x, cop.y);
+        ctx.rotate(cop.a);
+        ctx.fillStyle = '#111820';
+        ctx.fillRect(-1.5, -1.05, 3, 2.1);
+        ctx.globalCompositeOperation = 'lighter';
+        const pulse = .65 + .35 * Math.sin(performance.now() / 80 + i);
+        ctx.globalAlpha = pulse;
+        ctx.shadowBlur = 12;
+        ctx.shadowColor = sirenOn ? '#399dff' : '#ff263f';
+        ctx.fillStyle = sirenOn ? '#68c7ff' : '#ff6673';
+        ctx.fillRect(-1.15, -0.78, 1.05, 1.56);
+        ctx.shadowColor = sirenOn ? '#ff263f' : '#399dff';
+        ctx.fillStyle = sirenOn ? '#ff6673' : '#68c7ff';
+        ctx.fillRect(0.1, -0.78, 1.05, 1.56);
+        ctx.restore();
+      }
+    }
+
     const sp = car.speed;
     const steerRad = Math.max(-.6, Math.min(.6, steerVis * .68 / (1 + sp / 55) * 1.5));
     drawCar(ctx, SPEC, car.x, car.y, car.a, { steer: steerRad, brake: brakeVis, lights: true });
@@ -241,6 +360,7 @@
       ctx.beginPath(); ctx.arc(p.x, p.y, .6, 0, 7); ctx.fill();
     }
     ctx.globalAlpha = 1;
+    drawMinimap();
   }
 
   function hud(dt) {
@@ -248,12 +368,19 @@
     if (mode === 'race') {
       el.tl.innerHTML = `<span class="lbl">${TR.meta.name} · LAP ${lap}/${LAPS}</span><span class="val big">${fmt(t)}</span>`;
       el.tr.innerHTML = `<span class="lbl">BEST</span><span class="val">${b.total ? fmt(b.total) : '--'}</span><span class="lbl">FASTEST LAP</span><span class="val">${b.lap ? fmt(b.lap) : '--'}</span>`;
+    } else if (mode === 'chase') {
+      const score = Math.floor(chaseScore.points);
+      const chaseBest = getBest('chase').score || 0;
+      el.tl.innerHTML = `<span class="lbl">COP CHASE · SURVIVED ${fmt(t)}</span><span class="val big">${score.toLocaleString()}<span class="unit">POINTS</span></span>`;
+      el.tr.innerHTML = `<span class="lbl">PURSUIT · ${chase.cops.length} COP${chase.cops.length === 1 ? '' : 'S'}</span><span class="val">CONFUSION ${Math.round(chaseScore.confusion * 20)}%</span><span class="lbl">BEST SCORE</span><span class="val">${chaseBest ? chaseBest.toLocaleString() : '--'}</span>`;
     } else {
       el.tl.innerHTML = `<span class="lbl">FREEPLAY</span><span class="val big">${CARS[carIdx].name}</span>`;
       el.tr.innerHTML = '<span class="lbl">R / TRIANGLE RESET</span>';
     }
     el.bl.innerHTML = `<span class="val big">${Math.round(car.speed * 1.4)}<span class="unit">KM/H</span></span>`;
-    el.br.innerHTML = `<span class="lbl">DRIFT</span><span class="val big hl">${Math.floor(drift)}${mult > 1.15 ? `<span class="mult">×${mult.toFixed(1)}</span>` : ''}</span>`;
+    el.br.innerHTML = mode === 'chase'
+      ? `<span class="lbl">DRIFT CHAIN · ${Math.floor(chaseScore.chainDistance * .285)} M</span><span class="val big hl">${mult.toFixed(1)}<span class="mult">×</span></span>`
+      : `<span class="lbl">DRIFT</span><span class="val big hl">${Math.floor(drift)}${mult > 1.15 ? `<span class="mult">×${mult.toFixed(1)}</span>` : ''}</span>`;
 
     rankT -= dt;
     if (rankT > 0 && state === 'play') {
@@ -289,7 +416,9 @@
 
       const b = getBest(trackId);
       if (menuMode === 'main') {
-        $('best').textContent = b.total ? 'BEST ' + TRACKS.find(t => t.id === trackId).name + ' ' + fmt(b.total) : '';
+        const raceRecord = b.total ? 'BEST ' + TRACKS.find(t => t.id === trackId).name + ' ' + fmt(b.total) : '';
+        const chaseRecord = getBest('chase').score ? 'CHASE BEST ' + getBest('chase').score.toLocaleString() : '';
+        $('best').textContent = [raceRecord, chaseRecord].filter(Boolean).join(' · ');
       } else if (menuMode === 'tracks') {
         const tr = TRACKS[Math.min(sel, TRACKS.length - 1)];
         const bb = tr ? getBest(tr.id) : {};
