@@ -25,7 +25,7 @@ class ChaseScore {
       this.chainSeconds += dt;
       this.grace = 1.5;
       this.multiplier = Math.min(5, 1 + this.chainSeconds * 0.12 + this.chainDistance / 500);
-      this.confusion = Math.min(5, this.confusion + dt * (.5 + Math.min(car.slip, 100) / 200));
+      this.confusion = Math.min(3, this.confusion + dt * (.3 + Math.min(car.slip, 100) / 350));
       const cell = `${Math.floor(car.x / 64)},${Math.floor(car.y / 64)}`;
       if (!this.visitedDriftCells.has(cell) && this.visitedDriftCells.size < 40000) {
         this.visitedDriftCells.add(cell);
@@ -69,7 +69,7 @@ class CopChase {
       const pos = CITY.resolve(x, y, 10);
       if (pos.hit) continue;
       const car = new Car();
-      car.setCfg({ ENG: 285, VMAX: 170, BRK: 380, REV: 95, L: 9.2, GRIP: 340 });
+      car.setCfg({ ENG: 400, VMAX: 260, BRK: 420, REV: 100, L: 9.2, GRIP: 340 });
       car.reset(pos.x, pos.y, Math.atan2(player.y - pos.y, player.x - pos.x));
       car.id = this.cops.length;
       car.navX = pos.x;
@@ -83,7 +83,7 @@ class CopChase {
     const x = Math.round(player.x / CITY.blockSize) * CITY.blockSize;
     const y = player.y - distance;
     const car = new Car();
-    car.setCfg({ ENG: 285, VMAX: 170, BRK: 380, REV: 95, L: 9.2, GRIP: 340 });
+    car.setCfg({ ENG: 400, VMAX: 260, BRK: 420, REV: 100, L: 9.2, GRIP: 340 });
     const pos = CITY.resolve(x, y, 10);
     car.reset(pos.x, pos.y, Math.atan2(player.y - pos.y, player.x - pos.x));
     car.id = this.cops.length;
@@ -127,7 +127,7 @@ class CopChase {
     for (let i = 0; i < this.cops.length; i++) {
       const cop = this.cops[i];
       const distance = Math.hypot(player.x - cop.x, player.y - cop.y);
-      const direct = distance < 260;
+      const direct = distance < 500;
       if (!Number.isFinite(cop.navX) || !Number.isFinite(cop.navY)) {
         cop.navX = Math.round(cop.x / CITY.blockSize) * CITY.blockSize;
         cop.navY = Math.round(cop.y / CITY.blockSize) * CITY.blockSize;
@@ -147,18 +147,18 @@ class CopChase {
       let targetX = cop.waypoint.x, targetY = cop.waypoint.y;
       const targetDistance = Math.hypot(targetX - cop.x, targetY - cop.y);
       if (direct) {
-        const lead = Math.min(.38, distance / 700) * Math.max(.5, 1 - confusion * .07);
+        const lead = Math.min(.6, distance / 500) * Math.max(.5, 1 - confusion * .07);
         targetX += player.vx * lead;
         targetY += player.vy * lead;
       }
       const targetAngle = Math.atan2(targetY - cop.y, targetX - cop.x);
       const headingError = wrapAngle(targetAngle - cop.a);
       const steer = clampValue(headingError * 1.8, -1, 1);
-      const maxSpeed = Math.min(210, 170 + this.elapsed * .08 + this.cops.length * 2);
+      const maxSpeed = Math.min(300, 240 + this.elapsed * .65 + this.cops.length * 4);
       let desiredSpeed = direct
-        ? clampValue(distance * .72, 18, maxSpeed)
-        : Math.min(maxSpeed, Math.sqrt(Math.max(0, 2 * 145 * (targetDistance - 28))));
-      if (Math.abs(headingError) > 1.05) desiredSpeed = Math.min(desiredSpeed, 38);
+        ? clampValue(Math.hypot(player.vx, player.vy) + 45, 18, maxSpeed)
+        : Math.min(maxSpeed, Math.sqrt(Math.max(0, 2 * 220 * (targetDistance - 8))));
+      if (Math.abs(headingError) > 1.05) desiredSpeed = Math.min(desiredSpeed, 70);
       const forwardSpeed = cop.vx * Math.cos(cop.a) + cop.vy * Math.sin(cop.a);
       const brake = forwardSpeed > desiredSpeed + 7 ? clampValue((forwardSpeed - desiredSpeed) / 45, .2, 1) : 0;
       const throttle = brake > 0 ? 0 : (forwardSpeed < desiredSpeed - 5 ? 1 : .15);

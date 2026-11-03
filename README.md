@@ -24,15 +24,16 @@ Then visit `http://localhost:8000/dwifft.html`.
 
 ## Modes
 
-- **Time Attack:** race laps on a chosen track and set a best time.
+- **Time Attack:** race laps on a chosen track and set a best time. A minimap
+  shows the circuit, your car, and the next checkpoint.
 - **Freeplay:** practice drifting without a timer.
 - **Cop Chase:** survive as long as possible in an endless, procedurally
   generated city. Police pursue and reinforce over time; touching one ends the
   run. Drift into new streets to score; the same road tiles only pay once, so
   repeating donuts won't farm points. Drift chains raise a capped multiplier
-  and confuse nearby cops. The minimap shows nearby streets, buildings, police,
-  and your car. Survival time is shown separately, and the best chase score is
-  saved.
+  and briefly distract nearby cops. The minimap shows nearby streets,
+  buildings, police, and your car. Survival time is shown separately, and the
+  best chase score is saved.
 
 ## Project files
 

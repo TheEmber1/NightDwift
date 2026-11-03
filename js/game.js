@@ -15,12 +15,12 @@
 
   // --- Car roster: real-car vector bodies + the same handling numbers as before ---
   const CARS = [
-    { id: 'skyline', name: 'SKYLINE', spec: CAR_SPECS.skyline, cfg: { ENG: 260, VMAX: 218, GRIP: 255, L: 9.6 },  stats: 'POWER  •  ANGLE' },
-    { id: 'supra',   name: 'SUPRA',   spec: CAR_SPECS.supra,   cfg: { ENG: 280, VMAX: 225, GRIP: 240, L: 10.2 }, stats: 'TORQUE  •  OVERSTEER' },
-    { id: 'porsche', name: 'PORSCHE', spec: CAR_SPECS.porsche, cfg: { ENG: 250, VMAX: 220, GRIP: 290, L: 8.8 },  stats: 'GRIP  •  PRECISION' },
-    { id: 'rx7',     name: 'RX-7',    spec: CAR_SPECS.rx7,     cfg: { ENG: 245, VMAX: 210, GRIP: 250, L: 8.5 },  stats: 'LIGHT  •  SNAPPY' },
-    { id: 'silvia',  name: 'SILVIA',  spec: CAR_SPECS.silvia,  cfg: { ENG: 240, VMAX: 208, GRIP: 260, L: 9.2 },  stats: 'BALANCED  •  FORGIVING' },
-    { id: 'ae86',    name: 'AE86',    spec: CAR_SPECS.ae86,    cfg: { ENG: 220, VMAX: 195, GRIP: 245, L: 8.2 },  stats: 'COMPACT  •  PURE' }
+    { id: 'skyline', name: 'SKYLINE', spec: CAR_SPECS.skyline, cfg: { ENG: 260, VMAX: 218, GRIP: 255, L: 9.6 },  stats: 'POWER SLIDES · easy to hold a wide angle' },
+    { id: 'supra',   name: 'SUPRA',   spec: CAR_SPECS.supra,   cfg: { ENG: 280, VMAX: 225, GRIP: 240, L: 10.2 }, stats: 'LONG SLIDES · high torque, loose rear' },
+    { id: 'porsche', name: 'PORSCHE', spec: CAR_SPECS.porsche, cfg: { ENG: 250, VMAX: 220, GRIP: 290, L: 8.8 },  stats: 'TIGHT LINES · precise, controlled grip' },
+    { id: 'rx7',     name: 'RX-7',    spec: CAR_SPECS.rx7,     cfg: { ENG: 245, VMAX: 210, GRIP: 250, L: 8.5 },  stats: 'QUICK TRANSITIONS · light and responsive' },
+    { id: 'silvia',  name: 'SILVIA',  spec: CAR_SPECS.silvia,  cfg: { ENG: 240, VMAX: 208, GRIP: 260, L: 9.2 },  stats: 'ALL-ROUNDER · balanced and forgiving' },
+    { id: 'ae86',    name: 'AE86',    spec: CAR_SPECS.ae86,    cfg: { ENG: 220, VMAX: 195, GRIP: 245, L: 8.2 },  stats: 'TIGHT CORNERS · compact and nimble' }
   ];
 
   let carIdx = 0;
@@ -102,7 +102,7 @@
       state = 'play';
     }
     cam.x = car.x; cam.y = car.y;
-    stage.className = m === 'chase' ? 'chase' : '';
+    stage.className = m === 'chase' ? 'chase' : m === 'race' ? 'race' : '';
   }
 
   function lapDone() {
@@ -179,7 +179,7 @@
         }
       } else if (mode === 'chase') {
         chase.step(car, H, chaseScore.confusion);
-        if (chase.cops.some(cop => Math.hypot(car.x - cop.x, car.y - cop.y) < 17)) finishChase();
+        if (chase.cops.some(cop => Math.hypot(car.x - cop.x, car.y - cop.y) < 27)) finishChase();
       }
     }
 
@@ -229,6 +229,44 @@
   }
 
   function drawMinimap() {
+    if (mode === 'race') {
+      const w = minimap.width, h = minimap.height, pad = 14;
+      const scale = Math.min((w - pad * 2) / TR.W, (h - pad * 2) / TR.H);
+      const ox = (w - TR.W * scale) / 2, oy = (h - TR.H * scale) / 2;
+      mapCtx.setTransform(1, 0, 0, 1, 0, 0);
+      mapCtx.clearRect(0, 0, w, h);
+      mapCtx.fillStyle = '#080d19';
+      mapCtx.fillRect(0, 0, w, h);
+      mapCtx.save();
+      mapCtx.setTransform(scale, 0, 0, scale, ox, oy);
+      mapCtx.lineJoin = 'round';
+      mapCtx.lineCap = 'round';
+      mapCtx.beginPath();
+      TR.cps.forEach((point, index) => index ? mapCtx.lineTo(point[0], point[1]) : mapCtx.moveTo(point[0], point[1]));
+      mapCtx.closePath();
+      mapCtx.strokeStyle = '#34445c';
+      mapCtx.lineWidth = TR.meta.opts.HW * 2 + 14;
+      mapCtx.stroke();
+      mapCtx.strokeStyle = '#18243a';
+      mapCtx.lineWidth = TR.meta.opts.HW * 2;
+      mapCtx.stroke();
+      mapCtx.setLineDash([5, 8]);
+      mapCtx.strokeStyle = 'rgba(125,215,244,.65)';
+      mapCtx.lineWidth = 1.5;
+      mapCtx.stroke();
+      mapCtx.setLineDash([]);
+
+      const target = TR.cps[cp % TR.cps.length];
+      mapCtx.fillStyle = '#ff4f91';
+      mapCtx.beginPath(); mapCtx.arc(target[0], target[1], 9, 0, Math.PI * 2); mapCtx.fill();
+      mapCtx.fillStyle = '#9bfbff';
+      mapCtx.beginPath(); mapCtx.arc(car.x, car.y, 8, 0, Math.PI * 2); mapCtx.fill();
+      mapCtx.strokeStyle = '#e7f2ff';
+      mapCtx.lineWidth = 2;
+      mapCtx.beginPath(); mapCtx.arc(car.x, car.y, 12, 0, Math.PI * 2); mapCtx.stroke();
+      mapCtx.restore();
+      return;
+    }
     if (mode !== 'chase') return;
     const w = minimap.width, h = minimap.height, scale = Math.min((w - 12) / 1800, (h - 12) / 1200);
     const x0 = car.x - w / scale / 2, y0 = car.y - h / scale / 2;
@@ -372,7 +410,7 @@
       const score = Math.floor(chaseScore.points);
       const chaseBest = getBest('chase').score || 0;
       el.tl.innerHTML = `<span class="lbl">COP CHASE · SURVIVED ${fmt(t)}</span><span class="val big">${score.toLocaleString()}<span class="unit">POINTS</span></span>`;
-      el.tr.innerHTML = `<span class="lbl">PURSUIT · ${chase.cops.length} COP${chase.cops.length === 1 ? '' : 'S'}</span><span class="val">CONFUSION ${Math.round(chaseScore.confusion * 20)}%</span><span class="lbl">BEST SCORE</span><span class="val">${chaseBest ? chaseBest.toLocaleString() : '--'}</span>`;
+      el.tr.innerHTML = `<span class="lbl">PURSUIT · ${chase.cops.length} COP${chase.cops.length === 1 ? '' : 'S'}</span><span class="val">DISTRACTION ${Math.round(chaseScore.confusion * 20)}%</span><span class="lbl">BEST SCORE</span><span class="val">${chaseBest ? chaseBest.toLocaleString() : '--'}</span>`;
     } else {
       el.tl.innerHTML = `<span class="lbl">FREEPLAY</span><span class="val big">${CARS[carIdx].name}</span>`;
       el.tr.innerHTML = '<span class="lbl">R / TRIANGLE RESET</span>';
@@ -424,7 +462,7 @@
         const bb = tr ? getBest(tr.id) : {};
         $('best').textContent = bb.total ? 'RECORD ' + fmt(bb.total) : (tr ? 'NO RECORD YET' : '');
       } else if (menuMode === 'cars' && sel < CARS.length) {
-        $('best').textContent = CARS[sel].spec.full + '  ·  ' + CARS[sel].stats;
+        $('best').textContent = CARS[sel].stats;
       } else {
         $('best').textContent = '';
       }
