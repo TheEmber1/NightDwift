@@ -161,6 +161,10 @@ function buildCity() {
     if (blockCache.size > 256) blockCache.delete(blockCache.keys().next().value);
     return buildings;
   };
+  const buildingAt = (x, y) => {
+    const bx = Math.floor(x / BLOCK), by = Math.floor(y / BLOCK);
+    return getBlock(bx, by).find(b => x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h);
+  };
   const buildingsIn = (x0, y0, x1, y1) => {
     const found = [];
     const bx0 = Math.floor(x0 / BLOCK), by0 = Math.floor(y0 / BLOCK);
@@ -178,7 +182,7 @@ function buildCity() {
     blockSize: BLOCK, roadWidth: ROAD,
     buildingsIn,
     resolve(x, y, radius) {
-      let hit = false;
+      let hit = false, nx = 0, ny = 0;
       for (let pass = 0; pass < 3; pass++) {
         let moved = false;
         for (const b of buildingsIn(x - radius, y - radius, x + radius, y + radius)) {
@@ -198,15 +202,19 @@ function buildCity() {
             y += dy * (radius + sides[0][0]);
           } else {
             const push = radius - distance;
-            x += dx / distance * push;
-            y += dy / distance * push;
+            dx /= distance; dy /= distance;
+            x += dx * push;
+            y += dy * push;
           }
+          nx += dx; ny += dy;
           hit = moved = true;
         }
         if (!moved) break;
       }
-      return { x, y, hit };
+      const length = Math.hypot(nx, ny) || 1;
+      return { x, y, hit, nx: nx / length, ny: ny / length };
     },
+    isBuilding(x, y) { return !!buildingAt(x, y); },
     drawGround(c, v, viewport) {
       c.fillStyle = '#070b15';
       c.fillRect(viewport.x0, viewport.y0, viewport.x1 - viewport.x0, viewport.y1 - viewport.y0);
