@@ -5,13 +5,13 @@ night-racing look. Race laps or practice freely.
 
 ## Run
 
-Open `dwifft.html` in a browser, or serve the project directory locally:
+Open `index.html` in a browser, or serve the project directory locally:
 
 ```sh
 python3 -m http.server
 ```
 
-Then visit `http://localhost:8000/dwifft.html`.
+Then visit `http://localhost:8000/`.
 
 ## Controls
 
@@ -74,7 +74,7 @@ shows it alongside accepted friends' best times after each run.
 
 ## Project files
 
-- `dwifft.html` — page structure and script loading order
+- `index.html` — page structure and script loading order
 - `styles.css` — game and menu styles
 - `js/input.js` — keyboard and gamepad controls
 - `js/sound.js` — synthesized engine, tire, and arcade sound effects
