@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#090a08">
 <title>NightDwift</title>
-<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="styles.css?v=leaderboard-1">
 </head>
 <body>
 <div id="stage" class="menu">
@@ -24,7 +24,13 @@
       <section class="menu-panel" aria-label="Game modes">
         <p class="section-label"><span id="menu-section-title">SELECT YOUR RUN</span></p>
         <div id="menu-items"></div>
+        <section id="leaderboard-view" class="leaderboard-view" aria-label="Time Attack leaderboard" hidden>
+          <div id="leaderboard-tabs" class="leaderboard-tabs" role="tablist" aria-label="Choose a track"></div>
+          <div id="leaderboard-rows" class="leaderboard-rows" aria-live="polite"></div>
+          <button id="leaderboard-back" class="leaderboard-back" type="button">‹ BACK TO MENU</button>
+        </section>
         <p id="best"></p>
+        <div id="friend-times" class="friend-times" aria-live="polite"></div>
       </section>
       <section class="garage-panel" aria-label="Featured car">
         <p class="section-label"><span id="garage-section-title">TONIGHT'S MACHINE</span><span>NO. 01</span></p>
@@ -52,13 +58,93 @@
     </div>
   </div>
 </div>
+<div id="race-result" class="race-result-overlay" hidden aria-hidden="true">
+  <section class="race-result-dialog" role="dialog" aria-modal="true" aria-labelledby="race-result-title">
+    <p class="section-label">TIME ATTACK <span id="race-result-track"></span></p>
+    <h2 id="race-result-title">RUN COMPLETE</h2>
+    <div class="race-result-current">
+      <span class="lbl">YOUR TIME</span>
+      <strong id="race-result-time"></strong>
+      <span id="race-result-note" class="race-result-note"></span>
+    </div>
+    <div class="race-result-best">
+      <span><span class="lbl">PREVIOUS BEST</span><strong id="race-result-previous"></strong></span>
+      <span><span class="lbl">CURRENT BEST</span><strong id="race-result-best"></strong></span>
+    </div>
+    <section class="race-recent-section" aria-label="Recent times">
+      <h3>RECENT TIMES</h3>
+      <ol id="race-result-recent"></ol>
+    </section>
+    <div class="race-result-actions">
+      <button id="race-result-retry" type="button">TRY AGAIN</button>
+      <button id="race-result-menu" type="button">RETURN TO MENU</button>
+    </div>
+  </section>
+</div>
+<button id="profile-button" class="profile-button" type="button" aria-label="Open profile and sign in">
+  <span id="profile-header-avatar" class="profile-avatar">?</span>
+  <span id="profile-header-label">PROFILE</span>
+</button>
+<div id="profile-overlay" class="profile-overlay" hidden aria-hidden="true">
+  <section class="profile-dialog" role="dialog" aria-modal="true" aria-labelledby="profile-auth-title">
+    <button id="profile-close" class="profile-close" type="button" aria-label="Close profile">×</button>
+    <p class="section-label">MIDNIGHT MOTOR CLUB <span>DRIVER FILE</span></p>
+    <form id="profile-form">
+      <div id="profile-auth">
+        <h2 id="profile-auth-title">SIGN IN</h2>
+        <div id="profile-form-fields">
+          <div id="profile-signup-fields" hidden>
+            <label for="profile-name">DRIVER NAME</label>
+            <input id="profile-name" type="text" maxlength="24" autocomplete="nickname" placeholder="YOUR NAME">
+          </div>
+          <label for="profile-email">EMAIL</label>
+          <input id="profile-email" type="email" autocomplete="email" required placeholder="driver@example.com">
+          <label for="profile-password">PASSWORD</label>
+          <input id="profile-password" type="password" minlength="6" autocomplete="current-password" required placeholder="6 CHARACTERS MINIMUM">
+          <button id="profile-submit" class="profile-action" type="submit">SIGN IN</button>
+          <button id="profile-resend" class="profile-secondary" type="button" hidden>RESEND CONFIRMATION EMAIL</button>
+          <button id="profile-switch" class="profile-secondary" type="button">NEW HERE? CREATE AN ACCOUNT</button>
+        </div>
+      </div>
+      <div id="profile-account" hidden>
+        <div class="profile-identity">
+          <span id="profile-account-avatar" class="profile-avatar large">ND</span>
+          <div><h2 id="profile-account-name"></h2><span id="profile-account-email"></span></div>
+        </div>
+        <div id="profile-stats" class="profile-stats"></div>
+        <p class="player-tag-label">YOUR FRIEND CODE</p>
+        <strong id="profile-player-tag" class="player-tag"></strong>
+        <section class="friends-section" aria-label="Friends">
+          <h3>ADD A FRIEND</h3>
+          <div class="friend-search">
+            <input id="friend-code-input" type="text" maxlength="24" autocomplete="off" placeholder="DRIVER#1A2B3C4D5E6F" aria-label="Friend code">
+            <button id="friend-search-button" type="button">FIND</button>
+          </div>
+          <div id="friend-search-results" class="friend-list"></div>
+          <h3>FRIENDS & REQUESTS</h3>
+          <div id="friend-list" class="friend-list"></div>
+        </section>
+        <div id="profile-avatar-editor" hidden>
+          <p class="avatar-label">CHOOSE YOUR PROFILE PICTURE</p>
+          <div id="profile-avatars" class="profile-avatars"></div>
+          <button id="profile-avatar-save" class="profile-action" type="button">SAVE AVATAR</button>
+        </div>
+        <button id="profile-avatar-edit" class="profile-secondary" type="button">CHANGE PROFILE PICTURE</button>
+        <button id="profile-signout" class="profile-secondary" type="button">SIGN OUT</button>
+      </div>
+    </form>
+    <p id="profile-status" class="profile-status" role="status" aria-live="polite"></p>
+  </section>
+</div>
 <script src="js/error-handler.js"></script>
 <script src="js/input.js"></script>
 <script src="js/sound.js"></script>
 <script src="js/cars.js?v=garage-2"></script>
-<script src="js/tracks.js"></script>
+<script src="js/tracks.js?v=one-lap-2"></script>
 <script src="js/physics.js"></script>
-<script src="js/chase.js"></script>
-<script src="js/game.js?v=garage-2"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="js/supabase-config.js"></script>
+<script src="js/profile.js?v=leaderboard-1"></script>
+<script src="js/game.js?v=leaderboard-1"></script>
 </body>
 </html>

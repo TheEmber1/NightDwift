@@ -61,26 +61,117 @@
   } catch (e) {}
 
   let carIdx = 0;
+  try {
+    const savedCar = CARS.findIndex(car => car.id === localStorage.getItem('drift.selectedCar'));
+    if (savedCar >= 0) carIdx = savedCar;
+  } catch (e) {}
   let carMenuReturn = 'main', garageCategory = 'color';
   const car = new Car();
-  car.setCfg(CARS[0].cfg);
-  let SPEC = CARS[0].spec;
-  const chase = new CopChase();
-  const chaseScore = new ChaseScore();
+  car.setCfg(CARS[carIdx].cfg);
+  let SPEC = CARS[carIdx].spec;
 
   let trackId = TRACKS[0].id;
+  try {
+    const savedTrack = localStorage.getItem('drift.selectedTrack');
+    if (TRACKS.some(track => track.id === savedTrack)) trackId = savedTrack;
+  } catch (e) {}
   let TR = TRACK_MAP[trackId];
-  let LAPS = TRACKS[0].laps;
+  let LAPS = TRACK_MAP[trackId].meta.laps;
 
   let best = {};
-  try { best = JSON.parse(localStorage.getItem('drift.best')) || {}; } catch (e) {}
+  try {
+    best = JSON.parse(localStorage.getItem('drift.best')) || {};
+    if (localStorage.getItem('drift.timeAttackFormat') !== 'one-lap-v1') {
+      for (const track of TRACKS) {
+        const record = best[track.id];
+        if (!record) continue;
+        if (Number.isFinite(record.lap) && record.lap > 0) record.total = record.lap;
+        else delete record.total;
+      }
+      localStorage.setItem('drift.best', JSON.stringify(best));
+      localStorage.setItem('drift.timeAttackFormat', 'one-lap-v1');
+    }
+  } catch (e) {}
   if (best.total && !best.circuit) {
     best.circuit = { total: best.total, lap: best.lap };
     delete best.total; delete best.lap;
   }
-  const save = () => { try { localStorage.setItem('drift.best', JSON.stringify(best)); } catch (e) {} };
+  const save = () => {
+    try { localStorage.setItem('drift.best', JSON.stringify(best)); } catch (e) {}
+    markGameSaveChanged();
+  };
+  const recordProfileRun = (score, completed) => {
+    if (runRecorded || !runId || t < 1) return;
+    runRecorded = true;
+    Profile.recordRun(mode, score, t, completed, runId);
+  };
   const fmt = s => { const m = s / 60 | 0; return m + ':' + (s - m * 60).toFixed(3).padStart(6, '0'); };
   const getBest = id => best[id] || {};
+  const recentTimesKey = id => `drift.times.${id}`;
+  const getRecentTimes = id => {
+    try {
+      const times = JSON.parse(localStorage.getItem(recentTimesKey(id)));
+      return Array.isArray(times) ? times.filter(time => Number.isFinite(time) && time > 0).slice(0, 5) : [];
+    } catch (e) {
+      return [];
+    }
+  };
+  const saveRecentTime = (id, time) => {
+    const times = [time, ...getRecentTimes(id)].slice(0, 5);
+    try { localStorage.setItem(recentTimesKey(id), JSON.stringify(times)); } catch (e) {}
+    markGameSaveChanged();
+    return times;
+  };
+  const gameSaveTimestampKey = 'drift.gameSaveUpdatedAt';
+  let gameSaveUpdatedAt = 0;
+  try { gameSaveUpdatedAt = Number(localStorage.getItem(gameSaveTimestampKey)) || 0; } catch (e) {}
+  let gameSaveTimer = 0, gameSaveRevision = 0;
+  const getGameSaveData = () => {
+    const recentTimes = {};
+    for (const track of TRACKS) recentTimes[track.id] = getRecentTimes(track.id);
+    return {
+      version: 1,
+      selectedCar: CARS[carIdx].id,
+      selectedTrack: trackId,
+      garage: savedGarage,
+      best,
+      recentTimes,
+      soundEnabled: SFX.enabled
+    };
+  };
+  const setGameSaveTimestamp = (timestamp, userId, data) => {
+    gameSaveUpdatedAt = Date.parse(timestamp) || Number(timestamp) || Date.now();
+    try {
+      localStorage.setItem(gameSaveTimestampKey, String(gameSaveUpdatedAt));
+      if (userId && data)
+        localStorage.setItem(`drift.profileSave.${userId}`, JSON.stringify({ data, updatedAt: gameSaveUpdatedAt }));
+    } catch (e) {}
+  };
+  try {
+    const soundEnabled = localStorage.getItem('drift.soundEnabled');
+    if (soundEnabled !== null) SFX.setEnabled(soundEnabled === 'true');
+  } catch (e) {}
+  const markGameSaveChanged = () => {
+    const saveOwner = Profile.getUserId();
+    gameSaveUpdatedAt = Date.now();
+    try {
+      localStorage.setItem('drift.selectedCar', CARS[carIdx].id);
+      localStorage.setItem('drift.selectedTrack', trackId);
+      localStorage.setItem(gameSaveTimestampKey, String(gameSaveUpdatedAt));
+    } catch (e) {}
+    gameSaveRevision++;
+    Profile.cacheGameSave(getGameSaveData());
+    window.clearTimeout(gameSaveTimer);
+    gameSaveTimer = window.setTimeout(async () => {
+      const revision = gameSaveRevision;
+      try {
+        const savedAt = await Profile.saveGameData(getGameSaveData(), saveOwner);
+        if (savedAt && revision === gameSaveRevision) setGameSaveTimestamp(savedAt);
+      } catch (error) {
+        console.error('Unable to sync player save:', error);
+      }
+    }, 750);
+  };
   const garageChoices = id => {
     const saved = savedGarage[id] && typeof savedGarage[id] === 'object' ? savedGarage[id] : {};
     const setup = {};
@@ -105,11 +196,60 @@
   };
   const saveGarage = () => {
     try { localStorage.setItem('drift.garage', JSON.stringify(savedGarage)); } catch (e) {}
+    markGameSaveChanged();
+  };
+  const applyRemoteGameSave = (data, updatedAt, userId) => {
+    if (!data || typeof data !== 'object' || Array.isArray(data))
+      throw new Error('The saved game data is invalid.');
+    const car = CARS.findIndex(item => item.id === data.selectedCar);
+    if (car >= 0) carIdx = car;
+    if (TRACKS.some(track => track.id === data.selectedTrack)) trackId = data.selectedTrack;
+    savedGarage = data.garage && typeof data.garage === 'object' && !Array.isArray(data.garage)
+      ? data.garage : {};
+    for (const item of CARS) savedGarage[item.id] = garageChoices(item.id);
+
+    best = {};
+    if (data.best && typeof data.best === 'object' && !Array.isArray(data.best)) {
+      for (const track of TRACKS) {
+        const record = data.best[track.id];
+        if (!record || typeof record !== 'object') continue;
+        const total = Number(record.total), lap = Number(record.lap);
+        const clean = {};
+        if (Number.isFinite(total) && total > 0) clean.total = total;
+        if (Number.isFinite(lap) && lap > 0) clean.lap = lap;
+        if (Object.keys(clean).length) best[track.id] = clean;
+      }
+    }
+    try { localStorage.setItem('drift.best', JSON.stringify(best)); } catch (e) {}
+
+    for (const track of TRACKS) {
+      const recent = data.recentTimes?.[track.id];
+      const times = Array.isArray(recent)
+        ? recent.map(Number).filter(time => Number.isFinite(time) && time > 0).slice(0, 5)
+        : [];
+      try { localStorage.setItem(recentTimesKey(track.id), JSON.stringify(times)); } catch (e) {}
+    }
+    if (typeof data.soundEnabled === 'boolean') {
+      SFX.setEnabled(data.soundEnabled);
+      try { localStorage.setItem('drift.soundEnabled', String(data.soundEnabled)); } catch (e) {}
+    }
+    try {
+      localStorage.setItem('drift.garage', JSON.stringify(savedGarage));
+      localStorage.setItem('drift.selectedCar', CARS[carIdx].id);
+      localStorage.setItem('drift.selectedTrack', trackId);
+    } catch (e) {}
+    setGameSaveTimestamp(updatedAt, userId, data);
+    TR = TRACK_MAP[trackId];
+    LAPS = TR.meta.laps;
+    selectCar(carIdx);
+    lastSig = '';
+    paint();
   };
 
   let menuMode = 'main';
   let mode = 'race', state = 'menu', sel = 0, t = 0, lapT = 0, lap = 1, cp = 1, count = 0, drift = 0, msgT = 0, acc = 0;
-  let shake = 0, mult = 1, rankT = 0, rankTxt = '', zoom = 1.3, steerVis = 0, brakeVis = false;
+  let runId = null, runRecorded = false, raceChallenge = false, friendTimesRequest = 0, profileSyncElapsed = 0;
+  let shake = 0, mult = 1, zoom = 1.3, steerVis = 0, brakeVis = false;
   const cam = { x: 0, y: 0 };
 
   // tyre marks are stored as line segments (x0,y0,x1,y1) in a ring buffer
@@ -122,31 +262,76 @@
   const minimap = $('minimap'), mapCtx = minimap.getContext('2d');
   const menuItemsEl = $('menu-items');
   const preview = $('car-preview'), pctx = preview.getContext('2d');
+  const raceResult = $('race-result');
+  const leaderboardView = $('leaderboard-view');
+  const leaderboardTabs = $('leaderboard-tabs');
+  const leaderboardRows = $('leaderboard-rows');
+  let leaderboardTrack = trackId, leaderboardRequest = 0;
 
   const say = (h, s) => { el.msg.innerHTML = h; msgT = s; };
+  const hideRaceResult = () => {
+    raceResult.hidden = true;
+    raceResult.setAttribute('aria-hidden', 'true');
+  };
+  const showRaceResult = (time, previousBest, currentBest, isNewBest) => {
+    $('race-result-track').textContent = TR.meta.name;
+    $('race-result-time').textContent = fmt(time);
+    $('race-result-previous').textContent = previousBest ? fmt(previousBest) : '--';
+    $('race-result-best').textContent = fmt(currentBest);
+    $('race-result-note').textContent = !previousBest
+      ? 'FIRST TIME ON THIS TRACK'
+      : isNewBest
+        ? `NEW BEST · ${fmt(previousBest - time)} FASTER`
+        : time === previousBest
+          ? 'MATCHED YOUR BEST'
+          : `${fmt(time - previousBest)} OFF YOUR BEST`;
+    const recent = saveRecentTime(trackId, time);
+    const list = $('race-result-recent');
+    list.replaceChildren();
+    recent.forEach((recentTime, index) => {
+      const row = document.createElement('li');
+      const label = document.createElement('span');
+      label.textContent = index === 0 ? 'LATEST' : `RUN ${index + 1}`;
+      const result = document.createElement('strong');
+      result.textContent = fmt(recentTime);
+      row.append(label, result);
+      list.append(row);
+    });
+    raceResult.hidden = false;
+    raceResult.setAttribute('aria-hidden', 'false');
+    $('race-result-retry').focus();
+  };
 
   function selectCar(i) {
     carIdx = i;
     SPEC = CARS[i].spec;
     car.setCfg({ ...CARS[i].cfg, GRIP: CARS[i].cfg.GRIP * garageSetup(CARS[i].id).wheelGrip });
   }
-  selectCar(0);
+  selectCar(carIdx);
 
   function getMenuItems() {
     if (menuMode === 'main') return [
       { label: 'TIME ATTACK', action: () => { menuMode = 'tracks'; sel = 0; } },
+      { label: 'FRIEND TIME ATTACK', action: () => {
+        if (!Profile.isSignedIn()) { Profile.open(); return; }
+        menuMode = 'friend-tracks'; sel = 0;
+      } },
+      { label: 'LEADERBOARDS', action: () => { menuMode = 'leaderboard'; leaderboardTrack = trackId; sel = 0; } },
       { label: 'FREEPLAY', action: () => start('free') },
-      { label: 'COP CHASE', action: () => start('chase') },
       { label: 'GARAGE', action: () => { menuMode = 'garage'; sel = 0; } },
       { label: 'SETTINGS', action: () => { menuMode = 'settings'; sel = 0; } }
     ];
     if (menuMode === 'tracks') return TRACKS.map(tr => ({
       label: tr.name,
-      action: () => { trackId = tr.id; TR = TRACK_MAP[tr.id]; LAPS = tr.laps; start('race'); }
+      action: () => { trackId = tr.id; TR = TRACK_MAP[tr.id]; LAPS = tr.laps; markGameSaveChanged(); start('race', false); }
+    })).concat([{ label: '‹ BACK', action: () => { menuMode = 'main'; sel = 0; } }]);
+    if (menuMode === 'friend-tracks') return TRACKS.map(tr => ({
+      label: tr.name,
+      action: () => { trackId = tr.id; TR = TRACK_MAP[tr.id]; LAPS = tr.laps; markGameSaveChanged(); start('race', true); }
     })).concat([{ label: '‹ BACK', action: () => { menuMode = 'main'; sel = 0; } }]);
     if (menuMode === 'cars') return CARS.map((c, i) => ({
       label: `<i class="dot" style="background:${c.spec.color}"></i>${c.name}${i === carIdx ? ' ✓' : ''}`,
-      action: () => { selectCar(i); menuMode = carMenuReturn; sel = 0; }
+      action: () => { selectCar(i); markGameSaveChanged(); menuMode = carMenuReturn; sel = 0; }
     })).concat([{ label: '‹ BACK', action: () => { menuMode = carMenuReturn; sel = 0; } }]);
     if (menuMode === 'garage') {
       const setup = garageSetup(CARS[carIdx].id);
@@ -176,8 +361,11 @@
       })).concat([{ label: '‹ BACK', action: () => { menuMode = 'garage'; sel = ['color', 'paint', 'wing', 'wheels'].indexOf(garageCategory) + 1; } }]);
     }
     if (menuMode === 'settings') return [
-      { label: `SOUND: ${SFX.enabled ? 'ON' : 'OFF'}`, action: () => { SFX.setEnabled(!SFX.enabled); } },
+      { label: `SOUND: ${SFX.enabled ? 'ON' : 'OFF'}`, action: () => { SFX.setEnabled(!SFX.enabled); try { localStorage.setItem('drift.soundEnabled', String(SFX.enabled)); } catch (e) {} markGameSaveChanged(); } },
       { label: '‹ BACK', action: () => { menuMode = 'main'; sel = 0; } }
+    ];
+    if (menuMode === 'leaderboard') return [
+      { label: '‹ BACK TO MENU', action: () => { menuMode = 'main'; sel = 0; } }
     ];
     return [];
   }
@@ -195,47 +383,53 @@
     } else if (menuMode === 'cars') {
       menuMode = carMenuReturn;
       sel = 0;
+    } else if (menuMode === 'leaderboard') {
+      menuMode = 'main';
+      sel = 0;
     } else {
       menuMode = 'main';
       sel = 0;
     }
   }
 
-  function start(m) {
+  function start(m, challenge = raceChallenge) {
     mode = m; skn = skc = 0; pv[0].ok = pv[1].ok = false; parts.length = 0; drift = 0; msgT = 0; acc = 0;
+    hideRaceResult();
+    raceChallenge = m === 'race' && challenge;
+    runId = crypto.randomUUID(); runRecorded = false; profileSyncElapsed = 0;
     wasHandbrake = false; lastCountdown = 0;
-    shake = 0; mult = 1; rankT = 0; rankTxt = ''; steerVis = 0; brakeVis = false;
+    shake = 0; mult = 1; steerVis = 0; brakeVis = false;
     if (m === 'race') {
       const s = TR.start;
       car.reset(s.x, s.y, s.a);
       state = 'count'; count = 3.99; t = lapT = 0; lap = 1; cp = 1;
-    } else if (m === 'chase') {
-      car.reset(400, 400, 0);
-      state = 'play'; t = lapT = 0;
-      chaseScore.reset();
-      chase.reset(car);
     } else {
       car.reset(0, 0, -Math.PI / 2);
-      state = 'play';
+      state = 'play'; t = lapT = 0;
     }
     cam.x = car.x; cam.y = car.y;
-    stage.className = m === 'chase' ? 'chase' : m === 'race' ? 'race' : '';
+    stage.className = m === 'race' ? 'race' : '';
   }
 
   function lapDone() {
     SFX.lap();
     const lt = lapT; lapT = 0;
     const b = getBest(trackId);
+    const previousBest = b.total || 0;
     let rec = '';
     if (!b.lap || lt < b.lap) { b.lap = lt; rec = 'NEW FASTEST LAP'; }
     best[trackId] = b;
     if (lap >= LAPS) {
       state = 'done';
-      const nr = !b.total || t < b.total;
-      if (nr) b.total = t;
+      msgT = 0;
+      el.msg.style.display = 'none';
+      recordProfileRun(Math.floor(drift), true);
+      const isNewBest = !previousBest || t < previousBest;
+      if (isNewBest) b.total = t;
       best[trackId] = b;
       save();
-      say(`FINISH<br><span class="hl">${fmt(t)}</span><small>${nr ? 'NEW RECORD!' : 'BEST ' + fmt(b.total)}<br>R / TRIANGLE RETRY<br>ESC / OPTIONS MENU</small>`, 1e9);
+      Profile.recordTimeAttack(trackId, t * 1000, CARS[carIdx].id, garageChoices(CARS[carIdx].id));
+      showRaceResult(t, previousBest, b.total, isNewBest);
     } else {
       save(); lap++;
       say(`${fmt(lt)}<small>${rec || 'LAP ' + (lap - 1) + ' DONE'}</small>`, 1.8);
@@ -247,39 +441,15 @@
     parts.push({ x, y, vx, vy, l: life, l0: life, kind: kind || 0 });
   }
 
-  function finishChase() {
-    SFX.bust();
-    state = 'done';
-    const score = Math.floor(chaseScore.points);
-    const record = getBest('chase');
-    const isRecord = !record.score || score > record.score;
-    if (isRecord) record.score = score;
-    best.chase = record;
-    save();
-    say(`BUSTED<br><span class="hl">${score.toLocaleString()} POINTS</span><small>SURVIVED ${fmt(t)}<br>DRIFTED ${Math.floor(chaseScore.totalDistance * .285).toLocaleString()} M · ${chaseScore.multiplier.toFixed(1)}× MULTIPLIER<br>${isRecord ? 'NEW CHASE RECORD!' : 'BEST ' + record.score.toLocaleString()}<br>R / TRIANGLE RETRY<br>ESC / OPTIONS MENU</small>`, 1e9);
-  }
-
   function sim(inp) {
     const i = state === 'play' ? inp : ZERO;
     const wasOn = car.on;
     car.step(i, H, mode === 'race' ? TR.on(car.x, car.y) : true);
-    if (mode === 'chase') {
-      const pos = CITY.resolve(car.x, car.y, 7);
-      car.x = pos.x; car.y = pos.y;
-      if (pos.hit) {
-        SFX.impact();
-        car.vx *= 0.78; car.vy *= 0.78; car.w *= 0.75;
-        shake = Math.max(shake, 0.18);
-      }
-    }
     const sp = car.speed, c = Math.cos(car.a), s = Math.sin(car.a);
 
     if (state === 'play') {
       t += H; lapT += H;
-      if (mode === 'chase') {
-        chaseScore.step(car, H);
-        mult = chaseScore.multiplier;
-      } else if (car.on && car.slip > 28 && sp > 30) {
+      if (car.on && car.slip > 28 && sp > 30) {
         const add = (car.slip - 18) * sp / 18 * H * mult;
         drift += add;
         if (car.slip > 40) mult = Math.min(4, mult + H * 0.7);
@@ -287,19 +457,11 @@
         mult = Math.max(1, mult - H * 1.8);
       }
 
-      if (car.slip > 55 && sp > 50 && rankT <= 0) {
-        rankTxt = mult >= 3 ? 'INSANE' : mult >= 2 ? 'GREAT' : 'NICE';
-        rankT = 1.1;
-      }
-
       if (mode === 'race') {
         const g = TR.cps[cp % TR.cps.length];
         if (Math.hypot(car.x - g[0], car.y - g[1]) < 52) {
           if (cp === TR.cps.length) { cp = 1; lapDone(); } else cp++;
         }
-      } else if (mode === 'chase') {
-        chase.step(car, H, chaseScore.confusion);
-        if (chase.cops.some(cop => Math.hypot(car.x - cop.x, car.y - cop.y) < 27)) finishChase();
       }
     }
 
@@ -394,61 +556,7 @@
       mapCtx.restore();
       return;
     }
-    if (mode !== 'chase') return;
-    const w = minimap.width, h = minimap.height, scale = Math.min((w - 12) / 1800, (h - 12) / 1200);
-    const x0 = car.x - w / scale / 2, y0 = car.y - h / scale / 2;
-    const x1 = x0 + w / scale, y1 = y0 + h / scale;
-    mapCtx.setTransform(1, 0, 0, 1, 0, 0);
-    mapCtx.clearRect(0, 0, w, h);
-    mapCtx.fillStyle = '#111411';
-    mapCtx.fillRect(0, 0, w, h);
-    mapCtx.save();
-    mapCtx.beginPath();
-    mapCtx.rect(0, 0, w, h);
-    mapCtx.clip();
-    mapCtx.setTransform(scale, 0, 0, scale, w / 2 - car.x * scale, h / 2 - car.y * scale);
-
-    mapCtx.strokeStyle = '#292a25';
-    mapCtx.lineWidth = CITY.roadWidth;
-    mapCtx.beginPath();
-    for (let x = Math.floor(x0 / CITY.blockSize) * CITY.blockSize; x <= x1; x += CITY.blockSize) {
-      mapCtx.moveTo(x, y0); mapCtx.lineTo(x, y1);
-    }
-    for (let y = Math.floor(y0 / CITY.blockSize) * CITY.blockSize; y <= y1; y += CITY.blockSize) {
-      mapCtx.moveTo(x0, y); mapCtx.lineTo(x1, y);
-    }
-    mapCtx.stroke();
-    for (const b of CITY.buildingsIn(x0, y0, x1, y1)) {
-      mapCtx.fillStyle = b.color;
-      mapCtx.fillRect(b.x, b.y, b.w, b.h);
-      mapCtx.strokeStyle = b.accent;
-      mapCtx.lineWidth = 3;
-      mapCtx.strokeRect(b.x, b.y, b.w, b.h);
-    }
-    for (const cop of chase.cops) {
-      mapCtx.fillStyle = 'rgba(216,106,88,.35)';
-      mapCtx.beginPath(); mapCtx.arc(cop.x, cop.y, 26, 0, Math.PI * 2); mapCtx.fill();
-      mapCtx.fillStyle = '#d86a58';
-      mapCtx.beginPath(); mapCtx.arc(cop.x, cop.y, 12, 0, Math.PI * 2); mapCtx.fill();
-    }
-    mapCtx.save();
-    mapCtx.translate(car.x, car.y);
-    mapCtx.rotate(car.a);
-    mapCtx.shadowColor = '#efb35c';
-    mapCtx.shadowBlur = 14;
-    mapCtx.fillStyle = '#efb35c';
-    mapCtx.beginPath();
-    mapCtx.moveTo(20, 0); mapCtx.lineTo(-11, -10); mapCtx.lineTo(-7, 0); mapCtx.lineTo(-11, 10);
-    mapCtx.closePath(); mapCtx.fill();
-    mapCtx.restore();
-    mapCtx.restore();
-    mapCtx.setTransform(1, 0, 0, 1, 0, 0);
-    mapCtx.strokeStyle = 'rgba(239,179,92,.3)';
-    mapCtx.lineWidth = 1;
-    mapCtx.beginPath();
-    mapCtx.moveTo(w / 2 - 4, h / 2); mapCtx.lineTo(w / 2 + 4, h / 2);
-    mapCtx.moveTo(w / 2, h / 2 - 4); mapCtx.lineTo(w / 2, h / 2 + 4);
-    mapCtx.stroke();
+    mapCtx.clearRect(0, 0, minimap.width, minimap.height);
   }
 
   function draw() {
@@ -464,9 +572,7 @@
     ctx.setTransform(k, 0, 0, k, cw / 2 - cx * k, ch / 2 - cy * k);
 
     if (mode === 'race') TR.drawGround(ctx, v);
-    else if (mode === 'chase') CITY.drawGround(ctx, v, v);
     else drawFreeGround(v);
-    if (mode === 'chase') CITY.drawBuildings(ctx, v);
 
     // tyre marks (one stroke, so overlaps never get darker)
     if (skn) {
@@ -499,30 +605,6 @@
     }
     ctx.globalAlpha = 1;
 
-    if (mode === 'chase') {
-      const sirenOn = Math.floor(performance.now() / 180) % 2;
-      for (let i = 0; i < chase.cops.length; i++) {
-        const cop = chase.cops[i];
-        drawCar(ctx, CARS[2].spec, cop.x, cop.y, cop.a, { shadow: true });
-        ctx.save();
-        ctx.translate(cop.x, cop.y);
-        ctx.rotate(cop.a);
-        ctx.fillStyle = '#111820';
-        ctx.fillRect(-1.5, -1.05, 3, 2.1);
-        ctx.globalCompositeOperation = 'lighter';
-        const pulse = .65 + .35 * Math.sin(performance.now() / 80 + i);
-        ctx.globalAlpha = pulse;
-        ctx.shadowBlur = 12;
-        ctx.shadowColor = sirenOn ? '#399dff' : '#ff263f';
-        ctx.fillStyle = sirenOn ? '#68c7ff' : '#ff6673';
-        ctx.fillRect(-1.15, -0.78, 1.05, 1.56);
-        ctx.shadowColor = sirenOn ? '#ff263f' : '#399dff';
-        ctx.fillStyle = sirenOn ? '#ff6673' : '#68c7ff';
-        ctx.fillRect(0.1, -0.78, 1.05, 1.56);
-        ctx.restore();
-      }
-    }
-
     const sp = car.speed;
     const steerRad = Math.max(-.6, Math.min(.6, steerVis * .68 / (1 + sp / 55) * 1.5));
     drawCar(ctx, SPEC, car.x, car.y, car.a, {
@@ -541,30 +623,17 @@
   function hud(dt) {
     const b = getBest(trackId);
     if (mode === 'race') {
-      el.tl.innerHTML = `<span class="lbl">${TR.meta.name} · LAP ${lap}/${LAPS}</span><span class="val big">${fmt(t)}</span>`;
+      el.tl.innerHTML = `<span class="lbl">${raceChallenge ? 'FRIEND TIME ATTACK · ' : ''}${TR.meta.name} · LAP ${lap}/${LAPS}</span><span class="val big">${fmt(t)}</span>`;
       el.tr.innerHTML = `<span class="lbl">BEST</span><span class="val">${b.total ? fmt(b.total) : '--'}</span><span class="lbl">FASTEST LAP</span><span class="val">${b.lap ? fmt(b.lap) : '--'}</span>`;
-    } else if (mode === 'chase') {
-      const score = Math.floor(chaseScore.points);
-      const chaseBest = getBest('chase').score || 0;
-      el.tl.innerHTML = `<span class="lbl">COP CHASE · SURVIVED ${fmt(t)}</span><span class="val big">${score.toLocaleString()}<span class="unit">POINTS</span></span>`;
-      el.tr.innerHTML = `<span class="lbl">PURSUIT · ${chase.cops.length} COP${chase.cops.length === 1 ? '' : 'S'}</span><span class="val">DISTRACTION ${Math.round(chaseScore.confusion * 20)}%</span><span class="lbl">BEST SCORE</span><span class="val">${chaseBest ? chaseBest.toLocaleString() : '--'}</span>`;
     } else {
       el.tl.innerHTML = `<span class="lbl">FREEPLAY</span><span class="val big">${CARS[carIdx].name}</span>`;
       el.tr.innerHTML = '<span class="lbl">R / TRIANGLE RESET</span>';
     }
     el.bl.innerHTML = `<span class="val big">${Math.round(car.speed * 1.4)}<span class="unit">KM/H</span></span>`;
-    el.br.innerHTML = mode === 'chase'
-      ? `<span class="lbl">DRIFT CHAIN · ${Math.floor(chaseScore.chainDistance * .285)} M</span><span class="val big hl">${mult.toFixed(1)}<span class="mult">×</span></span>`
-      : `<span class="lbl">DRIFT</span><span class="val big hl">${Math.floor(drift)}${mult > 1.15 ? `<span class="mult">×${mult.toFixed(1)}</span>` : ''}</span>`;
+    el.br.innerHTML = `<span class="lbl">DRIFT</span><span class="val big hl">${Math.floor(drift)}${mult > 1.15 ? `<span class="mult">×${mult.toFixed(1)}</span>` : ''}</span>`;
 
-    rankT -= dt;
-    if (rankT > 0 && state === 'play') {
-      el.msg.innerHTML = `<span class="hl">${rankTxt}</span>`;
-      el.msg.style.display = 'block';
-    } else {
-      msgT -= dt;
-      el.msg.style.display = msgT > 0 ? 'block' : 'none';
-    }
+    msgT -= dt;
+    el.msg.style.display = msgT > 0 ? 'block' : 'none';
   }
 
   let lastSig = '';
@@ -588,42 +657,175 @@
 
   function paint() {
     const items = getMenuItems();
-    const sig = menuMode + '|' + sel + '|' + carIdx + '|' + trackId;
+    const sig = menuMode + '|' + sel + '|' + carIdx + '|' + trackId + '|' + leaderboardTrack;
     if (sig !== lastSig) {
       lastSig = sig;
-      menuItemsEl.innerHTML = items.map((it, i) => `<div class="item${i === sel ? ' sel' : ''}">${it.label}</div>`).join('');
-      menuItemsEl.querySelectorAll('.item').forEach((e, i) => {
-        e.onclick = () => { SFX.unlock(); SFX.select(); items[i].action(); lastSig = ''; };
-        e.onmouseenter = () => { if (sel !== i) { SFX.move(); sel = i; } };
-      });
+      const showingLeaderboard = menuMode === 'leaderboard';
+      menuItemsEl.hidden = showingLeaderboard;
+      leaderboardView.hidden = !showingLeaderboard;
+      if (showingLeaderboard) {
+        menuItemsEl.replaceChildren();
+        const request = ++leaderboardRequest;
+        leaderboardTabs.replaceChildren();
+        for (const track of TRACKS) {
+          const tab = document.createElement('button');
+          tab.type = 'button';
+          tab.setAttribute('role', 'tab');
+          tab.setAttribute('aria-selected', String(track.id === leaderboardTrack));
+          tab.tabIndex = track.id === leaderboardTrack ? 0 : -1;
+          tab.className = `leaderboard-tab${track.id === leaderboardTrack ? ' selected' : ''}`;
+          tab.textContent = track.name;
+          tab.addEventListener('click', () => {
+            SFX.unlock(); SFX.select();
+            leaderboardTrack = track.id;
+            lastSig = '';
+            paint();
+          });
+          tab.addEventListener('keydown', event => {
+            if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+            event.preventDefault();
+            const direction = event.key === 'ArrowRight' ? 1 : -1;
+            const current = TRACKS.findIndex(item => item.id === leaderboardTrack);
+            leaderboardTrack = TRACKS[(current + direction + TRACKS.length) % TRACKS.length].id;
+            lastSig = '';
+            paint();
+            leaderboardTabs.querySelector('[aria-selected="true"]')?.focus();
+          });
+          leaderboardTabs.append(tab);
+        }
+        leaderboardRows.replaceChildren();
+        const loading = document.createElement('p');
+        loading.className = 'leaderboard-message';
+        loading.textContent = 'LOADING GLOBAL TIMES…';
+        leaderboardRows.append(loading);
+        Profile.getLeaderboard(leaderboardTrack).then(entries => {
+          if (request !== leaderboardRequest || menuMode !== 'leaderboard') return;
+          leaderboardRows.replaceChildren();
+          if (!entries.length) {
+            const empty = document.createElement('p');
+            empty.className = 'leaderboard-message';
+            empty.textContent = 'NO TIMES POSTED YET. SIGN IN AND SET THE FIRST RECORD!';
+            leaderboardRows.append(empty);
+            return;
+          }
+          const carNames = Object.fromEntries(CARS.map(car => [car.id, car.name]));
+          const avatarNames = { skyline: 'R34', supra: 'A80', porsche: '911', rx7: 'FD', silvia: 'S15', ae86: '86' };
+          for (const [index, entry] of entries.entries()) {
+            const row = document.createElement('article');
+            row.className = 'leaderboard-row';
+            const rank = document.createElement('span');
+            rank.className = 'leaderboard-rank';
+            rank.textContent = String(index + 1).padStart(2, '0');
+            const avatar = document.createElement('span');
+            avatar.className = 'profile-avatar leaderboard-avatar';
+            avatar.textContent = avatarNames[entry.avatar] || 'ND';
+            const identity = document.createElement('span');
+            identity.className = 'leaderboard-identity';
+            const name = document.createElement('strong');
+            name.textContent = entry.display_name;
+            identity.append(name);
+            const vehicle = document.createElement('span');
+            vehicle.className = 'leaderboard-vehicle';
+            const vehicleName = carNames[entry.car_id] || 'CAR NOT RECORDED';
+            const setup = entry.car_setup;
+            const build = setup
+              ? `${setup.color} · ${setup.paint} · ${setup.wing} · ${setup.wheels} WHEELS`
+              : 'BUILD NOT RECORDED';
+            vehicle.textContent = `${vehicleName} · ${build}`;
+            const time = document.createElement('strong');
+            time.className = 'leaderboard-time';
+            time.textContent = fmt(entry.time_ms / 1000);
+            row.append(rank, avatar, identity, vehicle, time);
+            leaderboardRows.append(row);
+          }
+        }).catch(error => {
+          if (request !== leaderboardRequest || menuMode !== 'leaderboard') return;
+          const failed = document.createElement('p');
+          failed.className = 'leaderboard-message error';
+          failed.textContent = `LEADERBOARD UNAVAILABLE: ${error.message}`;
+          leaderboardRows.replaceChildren(failed);
+        });
+      } else {
+        leaderboardRequest++;
+        menuItemsEl.innerHTML = items.map((it, i) => `<div class="item${i === sel ? ' sel' : ''}">${it.label}</div>`).join('');
+        menuItemsEl.querySelectorAll('.item').forEach((e, i) => {
+          e.onclick = () => { SFX.unlock(); SFX.select(); items[i].action(); lastSig = ''; };
+          e.onmouseenter = () => { if (sel !== i) { SFX.move(); sel = i; } };
+        });
+      }
 
       const b = getBest(trackId);
-      if (menuMode === 'main') {
+      if (showingLeaderboard) {
+        $('best').textContent = '';
+        $('friend-times').replaceChildren();
+      } else if (menuMode === 'main') {
         const raceRecord = b.total ? 'BEST ' + TRACKS.find(t => t.id === trackId).name + ' ' + fmt(b.total) : '';
-        const chaseRecord = getBest('chase').score ? 'CHASE BEST ' + getBest('chase').score.toLocaleString() : '';
-        $('best').textContent = [raceRecord, chaseRecord].filter(Boolean).join(' · ');
-      } else if (menuMode === 'tracks') {
+        $('best').textContent = raceRecord;
+      } else if (menuMode === 'tracks' || menuMode === 'friend-tracks') {
         const tr = TRACKS[Math.min(sel, TRACKS.length - 1)];
         const bb = tr ? getBest(tr.id) : {};
-        $('best').textContent = bb.total ? 'RECORD ' + fmt(bb.total) : (tr ? 'NO RECORD YET' : '');
+        $('best').textContent = menuMode === 'friend-tracks'
+          ? 'FRIEND TIME ATTACK · BEST TIMES'
+          : bb.total ? 'RECORD ' + fmt(bb.total) : (tr ? 'NO RECORD YET' : '');
+        const request = ++friendTimesRequest;
+        const timesElement = $('friend-times');
+        timesElement.replaceChildren();
+        if (menuMode === 'friend-tracks' && tr) {
+          const loading = document.createElement('p');
+          loading.className = 'friend-empty'; loading.textContent = 'LOADING FRIEND TIMES…';
+          timesElement.append(loading);
+          Profile.getFriendTimes(tr.id).then(times => {
+            if (request !== friendTimesRequest || menuMode !== 'friend-tracks') return;
+            timesElement.replaceChildren();
+            if (!times?.length) {
+              const empty = document.createElement('p');
+              empty.className = 'friend-empty'; empty.textContent = 'NO TIMES POSTED YET. SET THE FIRST RECORD!';
+              timesElement.append(empty);
+              return;
+            }
+            for (const [index, time] of times.entries()) {
+              const row = document.createElement('div');
+              row.className = 'friend-time-row';
+              const name = document.createElement('span');
+              name.textContent = `${index + 1}. ${time.is_self ? 'YOU' : time.display_name}`;
+              const result = document.createElement('strong');
+              result.textContent = fmt(time.time_ms / 1000);
+              row.append(name, result);
+              timesElement.append(row);
+            }
+          }).catch(error => {
+            if (request !== friendTimesRequest || menuMode !== 'friend-tracks') return;
+            const failed = document.createElement('p');
+            failed.className = 'friend-empty'; failed.textContent = `FRIEND TIMES UNAVAILABLE: ${error.message}`;
+            timesElement.replaceChildren(failed);
+          });
+        }
       } else if (menuMode === 'cars' && sel < CARS.length) {
         $('best').textContent = CARS[sel].stats;
       } else if (menuMode === 'garage') {
         $('best').textContent = 'SETUP SAVES PER CAR';
       } else {
         $('best').textContent = '';
+        $('friend-times').replaceChildren();
+      }
+      if (menuMode !== 'friend-tracks' && menuMode !== 'tracks') {
+        friendTimesRequest++;
+        $('friend-times').replaceChildren();
       }
     }
     $('menu-section-title').textContent =
       menuMode === 'settings' ? 'SETTINGS'
         : menuMode === 'garage' ? 'CUSTOMIZE YOUR CAR'
-          : menuMode === 'garage-option' ? `CHOOSE ${garageCategory === 'color' ? 'BODY COLOR' : garageCategory === 'paint' ? 'PAINT STYLE' : garageCategory.toUpperCase()}`
+          : menuMode === 'friend-tracks' ? 'FRIEND TIME ATTACK'
+            : menuMode === 'leaderboard' ? 'GLOBAL LEADERBOARD'
+            : menuMode === 'garage-option' ? `CHOOSE ${garageCategory === 'color' ? 'BODY COLOR' : garageCategory === 'paint' ? 'PAINT STYLE' : garageCategory.toUpperCase()}`
             : menuMode === 'cars' ? 'SELECT YOUR CAR' : 'SELECT YOUR RUN';
     $('menu').classList.toggle('sub', menuMode !== 'main');
     $('menu').classList.toggle('cars', menuMode === 'cars');
     $('menu').classList.toggle('settings', menuMode === 'settings');
     $('menu').classList.toggle('garage', menuMode === 'garage' || menuMode === 'garage-option' || (menuMode === 'cars' && carMenuReturn === 'garage'));
     $('menu').classList.toggle('garage-option', menuMode === 'garage-option');
+    $('menu').classList.toggle('leaderboard', menuMode === 'leaderboard');
     paintPreview();
     $('pad').textContent = Input.connected() ? 'CONTROLLER CONNECTED' : 'PRESS A BUTTON TO CONNECT A CONTROLLER';
   }
@@ -635,14 +837,19 @@
 
     if (state === 'menu') {
       const items = getMenuItems();
-      if (q.up) { SFX.move(); sel = (sel - 1 + items.length) % items.length; }
-      if (q.down) { SFX.move(); sel = (sel + 1) % items.length; }
-      if (q.ok) { SFX.unlock(); SFX.select(); items[sel].action(); lastSig = ''; }
-      if (q.menu && menuMode !== 'main') { SFX.move(); backToParentMenu(); lastSig = ''; }
+      if (!Profile.dialogOpen()) {
+        if (q.up) { SFX.move(); sel = (sel - 1 + items.length) % items.length; }
+        if (q.down) { SFX.move(); sel = (sel + 1) % items.length; }
+        if (q.ok) { SFX.unlock(); SFX.select(); items[sel].action(); lastSig = ''; }
+        if (q.menu && menuMode !== 'main') { SFX.move(); backToParentMenu(); lastSig = ''; }
+      }
       paint();
     } else if (q.menu) {
+      recordProfileRun(Math.floor(drift), mode === 'free');
+      hideRaceResult();
       state = 'menu'; menuMode = 'main'; sel = 0; stage.className = 'menu'; lastSig = '';
     } else if (q.reset || (state === 'done' && q.ok)) {
+      recordProfileRun(Math.floor(drift), mode === 'free');
       start(mode);
     }
 
@@ -655,6 +862,13 @@
       }
       acc += dt;
       while (acc >= H) { sim(inp); acc -= H; }
+      if (state === 'play' && !runRecorded) {
+        profileSyncElapsed += dt;
+        if (profileSyncElapsed >= 15) {
+          profileSyncElapsed %= 15;
+          Profile.recordRun(mode, Math.floor(drift), t, false, runId);
+        }
+      }
 
       if (inp.hand && !wasHandbrake) SFX.handbrake();
       wasHandbrake = !!inp.hand;
@@ -690,6 +904,28 @@
     requestAnimationFrame(frame);
   }
   window.focus();
+  $('race-result-retry').addEventListener('click', () => {
+    SFX.select();
+    start('race', raceChallenge);
+  });
+  $('race-result-menu').addEventListener('click', () => {
+    SFX.select();
+    hideRaceResult();
+    state = 'menu'; menuMode = 'main'; sel = 0; stage.className = 'menu'; lastSig = '';
+  });
+  $('leaderboard-back').addEventListener('click', () => {
+    SFX.select();
+    menuMode = 'main'; sel = 0; lastSig = '';
+    paint();
+  });
+  Profile.setGameSaveHandler({
+    getLocalSave: (userId, hasRemote, accountSave) => accountSave || ({
+      data: getGameSaveData(),
+      updatedAt: hasRemote ? 0 : gameSaveUpdatedAt
+    }),
+    applyRemoteSave: applyRemoteGameSave,
+    setSaveTimestamp: setGameSaveTimestamp
+  });
   addEventListener('pointerdown', () => { window.focus(); SFX.unlock(); });
   addEventListener('keydown', () => SFX.unlock(), { once: true });
   paint();

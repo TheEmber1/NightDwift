@@ -1,6 +1,6 @@
 const SFX = (() => {
   let audio, master, engine, engineGain, squeal, squealGain, squealFilter;
-  let enabled = true, lastImpact = 0;
+  let enabled = true;
 
   function unlock() {
     if (!audio) {
@@ -83,12 +83,5 @@ const SFX = (() => {
     tick() { tone(520, 390, 0.1, 'square', 0.09); },
     go() { tone(360, 920, 0.22, 'square', 0.11); },
     lap() { tone(620, 1040, 0.25, 'triangle', 0.09); },
-    impact() {
-      const now = performance.now();
-      if (now - lastImpact < 180) return;
-      lastImpact = now;
-      tone(110, 38, 0.16, 'sawtooth', 0.13);
-    },
-    bust() { tone(260, 55, 0.55, 'sawtooth', 0.12); }
   };
 })();
