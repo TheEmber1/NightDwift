@@ -2,12 +2,13 @@
   const $ = id => document.getElementById(id);
   const cvEl = $('c'), ctx = cvEl.getContext('2d'), stage = $('stage');
   const H = 1 / 120, ZERO = { steer: 0, throttle: 0, brake: 0, hand: 0 };
-  const FREE_GROUND = '#080c17';
+  const FREE_GROUND = '#171a15';
+  const PIXEL_SCALE = 0.62;
 
   // canvas always fills the window; the world is scaled so at least 320x180 units are visible
   let dpr = 1;
   const fit = () => {
-    dpr = Math.min(2, window.devicePixelRatio || 1);
+    dpr = Math.min(1, window.devicePixelRatio || 1) * PIXEL_SCALE;
     cvEl.width = Math.max(2, Math.round(innerWidth * dpr));
     cvEl.height = Math.max(2, Math.round(innerHeight * dpr));
   };
@@ -23,7 +24,44 @@
     { id: 'ae86',    name: 'AE86',    spec: CAR_SPECS.ae86,    cfg: { ENG: 220, VMAX: 195, GRIP: 245, L: 8.2 },  stats: 'TIGHT CORNERS · compact and nimble' }
   ];
 
+  const GARAGE_OPTIONS = {
+    color: [
+      { id: 'factory', name: 'FACTORY', color: null },
+      { id: 'blue', name: 'MIDNIGHT BLUE', color: '#315b98' },
+      { id: 'red', name: 'CHERRY RED', color: '#b74438' },
+      { id: 'ivory', name: 'OLD IVORY', color: '#e5dcc3' },
+      { id: 'yellow', name: 'SIGNAL YELLOW', color: '#e2bd43' },
+      { id: 'jade', name: 'JADE GREEN', color: '#508575' },
+      { id: 'purple', name: 'PLUM PURPLE', color: '#815c85' }
+    ],
+    paint: [
+      { id: 'factory', name: 'FACTORY SOLID' },
+      { id: 'stripes', name: 'TWIN STRIPES' },
+      { id: 'two-tone', name: 'TWO-TONE' },
+      { id: 'panda', name: 'PANDA' }
+    ],
+    wing: [
+      { id: 'stock', name: 'STOCK' },
+      { id: 'gt', name: 'GT WING' },
+      { id: 'ducktail', name: 'DUCKTAIL' },
+      { id: 'none', name: 'NO WING' }
+    ],
+    wheels: [
+      { id: 'steel', name: 'STEELIES', grip: 1, feel: 'BALANCED' },
+      { id: 'bronze', name: 'BRONZE', grip: 0.9, feel: 'LOOSE' },
+      { id: 'white', name: 'WHITE', grip: 1.16, feel: 'STICKY' },
+      { id: 'gunmetal', name: 'GUNMETAL', grip: 0.82, feel: 'SLIPPERY' },
+      { id: 'gold', name: 'GOLD', grip: 1.08, feel: 'GRIPPY' }
+    ]
+  };
+  let savedGarage = {};
+  try {
+    const stored = JSON.parse(localStorage.getItem('drift.garage'));
+    if (stored && typeof stored === 'object' && !Array.isArray(stored)) savedGarage = stored;
+  } catch (e) {}
+
   let carIdx = 0;
+  let carMenuReturn = 'main', garageCategory = 'color';
   const car = new Car();
   car.setCfg(CARS[0].cfg);
   let SPEC = CARS[0].spec;
@@ -43,6 +81,31 @@
   const save = () => { try { localStorage.setItem('drift.best', JSON.stringify(best)); } catch (e) {} };
   const fmt = s => { const m = s / 60 | 0; return m + ':' + (s - m * 60).toFixed(3).padStart(6, '0'); };
   const getBest = id => best[id] || {};
+  const garageChoices = id => {
+    const saved = savedGarage[id] && typeof savedGarage[id] === 'object' ? savedGarage[id] : {};
+    const setup = {};
+    for (const [category, options] of Object.entries(GARAGE_OPTIONS)) {
+      setup[category] = options.some(option => option.id === saved[category]) ? saved[category] : options[0].id;
+    }
+    return setup;
+  };
+  const garageSetup = id => {
+    const choices = garageChoices(id), paint = GARAGE_OPTIONS.color.find(option => option.id === choices.color);
+    const wheel = GARAGE_OPTIONS.wheels.find(option => option.id === choices.wheels);
+    const gripChange = Math.round((wheel.grip - 1) * 100);
+    return {
+      ...choices,
+      colorId: choices.color,
+      color: paint.color || CAR_SPECS[id].color,
+      wheelGrip: wheel.grip,
+      wheelFeel: wheel.feel,
+      gripChange,
+      wheelStats: `GRIP ${gripChange > 0 ? '+' : ''}${gripChange}% · ${wheel.feel}`
+    };
+  };
+  const saveGarage = () => {
+    try { localStorage.setItem('drift.garage', JSON.stringify(savedGarage)); } catch (e) {}
+  };
 
   let menuMode = 'main';
   let mode = 'race', state = 'menu', sel = 0, t = 0, lapT = 0, lap = 1, cp = 1, count = 0, drift = 0, msgT = 0, acc = 0;
@@ -50,10 +113,11 @@
   const cam = { x: 0, y: 0 };
 
   // tyre marks are stored as line segments (x0,y0,x1,y1) in a ring buffer
-  const SK = 9000, sk = new Float32Array(SK * 4);
+  const SK = 9000, sk = new Float32Array(SK * 5);
   let skn = 0, skc = 0;
   const pv = [{ ok: false, x: 0, y: 0 }, { ok: false, x: 0, y: 0 }];
   const parts = [];
+  let wasHandbrake = false, lastCountdown = 0;
   const el = { tl: $('tl'), tr: $('tr'), bl: $('bl'), br: $('br'), msg: $('msg') };
   const minimap = $('minimap'), mapCtx = minimap.getContext('2d');
   const menuItemsEl = $('menu-items');
@@ -64,15 +128,17 @@
   function selectCar(i) {
     carIdx = i;
     SPEC = CARS[i].spec;
-    car.setCfg(CARS[i].cfg);
+    car.setCfg({ ...CARS[i].cfg, GRIP: CARS[i].cfg.GRIP * garageSetup(CARS[i].id).wheelGrip });
   }
+  selectCar(0);
 
   function getMenuItems() {
     if (menuMode === 'main') return [
       { label: 'TIME ATTACK', action: () => { menuMode = 'tracks'; sel = 0; } },
       { label: 'FREEPLAY', action: () => start('free') },
       { label: 'COP CHASE', action: () => start('chase') },
-      { label: `<i class="dot" style="background:${SPEC.color}"></i>CAR: ${CARS[carIdx].name}`, action: () => { menuMode = 'cars'; sel = carIdx; } }
+      { label: 'GARAGE', action: () => { menuMode = 'garage'; sel = 0; } },
+      { label: 'SETTINGS', action: () => { menuMode = 'settings'; sel = 0; } }
     ];
     if (menuMode === 'tracks') return TRACKS.map(tr => ({
       label: tr.name,
@@ -80,13 +146,64 @@
     })).concat([{ label: '‹ BACK', action: () => { menuMode = 'main'; sel = 0; } }]);
     if (menuMode === 'cars') return CARS.map((c, i) => ({
       label: `<i class="dot" style="background:${c.spec.color}"></i>${c.name}${i === carIdx ? ' ✓' : ''}`,
-      action: () => { selectCar(i); menuMode = 'main'; sel = 0; }
-    })).concat([{ label: '‹ BACK', action: () => { menuMode = 'main'; sel = 0; } }]);
+      action: () => { selectCar(i); menuMode = carMenuReturn; sel = 0; }
+    })).concat([{ label: '‹ BACK', action: () => { menuMode = carMenuReturn; sel = 0; } }]);
+    if (menuMode === 'garage') {
+      const setup = garageSetup(CARS[carIdx].id);
+      const colorName = GARAGE_OPTIONS.color.find(option => option.id === setup.colorId)?.name || GARAGE_OPTIONS.color[0].name;
+      return [
+        { label: `CAR: ${CARS[carIdx].name}`, action: () => { carMenuReturn = 'garage'; menuMode = 'cars'; sel = carIdx; } },
+        { label: `BODY COLOR: ${colorName}`, action: () => openGarageCategory('color') },
+        { label: `PAINT STYLE: ${GARAGE_OPTIONS.paint.find(option => option.id === setup.paint)?.name}`, action: () => openGarageCategory('paint') },
+        { label: `WING: ${GARAGE_OPTIONS.wing.find(option => option.id === setup.wing)?.name}`, action: () => openGarageCategory('wing') },
+        { label: `DRIFT WHEELS: ${GARAGE_OPTIONS.wheels.find(option => option.id === setup.wheels)?.name} · ${setup.wheelStats}`, action: () => openGarageCategory('wheels') },
+        { label: '‹ BACK', action: () => { menuMode = 'main'; sel = 0; } }
+      ];
+    }
+    if (menuMode === 'garage-option') {
+      const options = GARAGE_OPTIONS[garageCategory];
+      const current = garageChoices(CARS[carIdx].id)[garageCategory];
+      return options.map(option => ({
+        label: `${garageCategory === 'color' ? `<i class="dot" style="background:${option.color || CARS[carIdx].spec.color}"></i>` : ''}<span class="option-name">${option.name}${option.id === current ? ' ✓' : ''}</span>${garageCategory === 'wheels' ? `<small class="option-stat">GRIP ${Math.round((option.grip - 1) * 100) > 0 ? '+' : ''}${Math.round((option.grip - 1) * 100)}% · ${option.feel}</small>` : ''}`,
+        action: () => {
+          const id = CARS[carIdx].id;
+          savedGarage[id] = { ...garageChoices(id), [garageCategory]: option.id };
+          saveGarage();
+          selectCar(carIdx);
+          menuMode = 'garage';
+          sel = ['color', 'paint', 'wing', 'wheels'].indexOf(garageCategory) + 1;
+        }
+      })).concat([{ label: '‹ BACK', action: () => { menuMode = 'garage'; sel = ['color', 'paint', 'wing', 'wheels'].indexOf(garageCategory) + 1; } }]);
+    }
+    if (menuMode === 'settings') return [
+      { label: `SOUND: ${SFX.enabled ? 'ON' : 'OFF'}`, action: () => { SFX.setEnabled(!SFX.enabled); } },
+      { label: '‹ BACK', action: () => { menuMode = 'main'; sel = 0; } }
+    ];
     return [];
+  }
+
+  function openGarageCategory(category) {
+    garageCategory = category;
+    menuMode = 'garage-option';
+    sel = GARAGE_OPTIONS[category].findIndex(option => option.id === garageSetup(CARS[carIdx].id)[category]);
+  }
+
+  function backToParentMenu() {
+    if (menuMode === 'garage-option') {
+      menuMode = 'garage';
+      sel = ['color', 'paint', 'wing', 'wheels'].indexOf(garageCategory) + 1;
+    } else if (menuMode === 'cars') {
+      menuMode = carMenuReturn;
+      sel = 0;
+    } else {
+      menuMode = 'main';
+      sel = 0;
+    }
   }
 
   function start(m) {
     mode = m; skn = skc = 0; pv[0].ok = pv[1].ok = false; parts.length = 0; drift = 0; msgT = 0; acc = 0;
+    wasHandbrake = false; lastCountdown = 0;
     shake = 0; mult = 1; rankT = 0; rankTxt = ''; steerVis = 0; brakeVis = false;
     if (m === 'race') {
       const s = TR.start;
@@ -106,6 +223,7 @@
   }
 
   function lapDone() {
+    SFX.lap();
     const lt = lapT; lapT = 0;
     const b = getBest(trackId);
     let rec = '';
@@ -130,6 +248,7 @@
   }
 
   function finishChase() {
+    SFX.bust();
     state = 'done';
     const score = Math.floor(chaseScore.points);
     const record = getBest('chase');
@@ -148,6 +267,7 @@
       const pos = CITY.resolve(car.x, car.y, 7);
       car.x = pos.x; car.y = pos.y;
       if (pos.hit) {
+        SFX.impact();
         car.vx *= 0.78; car.vy *= 0.78; car.w *= 0.75;
         shake = Math.max(shake, 0.18);
       }
@@ -188,16 +308,23 @@
       const rx = SPEC.rx, off = SPEC.hw - 0.5;
       [-off, off].forEach((ly, w) => {
         const nx = car.x + c * rx - s * ly, ny = car.y + s * rx + c * ly, p = pv[w];
-        if (p.ok) { const o = skc * 4; sk[o] = p.x; sk[o + 1] = p.y; sk[o + 2] = nx; sk[o + 3] = ny; skc = (skc + 1) % SK; skn = Math.min(SK, skn + 1); }
+        if (p.ok) {
+          const o = skc * 5;
+          sk[o] = p.x; sk[o + 1] = p.y; sk[o + 2] = nx; sk[o + 3] = ny; sk[o + 4] = i.hand ? 1 : 0;
+          skc = (skc + 1) % SK; skn = Math.min(SK, skn + 1);
+        }
         p.x = nx; p.y = ny; p.ok = true;
       });
       const bx = car.x + c * rx, by = car.y + s * rx;
-      if (Math.random() < 0.45)
+      if (Math.random() < (i.hand ? 0.78 : 0.45))
         addSmoke(bx + (Math.random() - .5) * 4, by + (Math.random() - .5) * 4,
                  car.vx * .15 + (Math.random() - .5) * 18, car.vy * .15 + (Math.random() - .5) * 18,
                  0.5 + Math.random() * 0.5, 0);
       if (car.slip > 45 && Math.random() < 0.35)
         addSmoke(bx - c * 1.5, by - s * 1.5, (Math.random() - .5) * 12, (Math.random() - .5) * 12, 0.7, 0);
+      if (i.hand && sp > 70 && Math.random() < 0.42)
+        addSmoke(bx + c * 2, by + s * 2, (Math.random() - .5) * 24, (Math.random() - .5) * 24, 0.22, 2);
+      if (i.hand && sp > 55) shake = Math.max(shake, 0.07);
     } else { pv[0].ok = pv[1].ok = false; }
 
     if (state !== 'count' && sp > 18) {
@@ -220,10 +347,10 @@
       for (let gx = Math.floor(v.x0 / g); gx <= v.x1 / g; gx++) {
         const X = gx * g, Y = gy * g;
         if (gx % 5 === 0 && gy % 5 === 0) {
-          ctx.strokeStyle = 'rgba(73,223,255,.55)'; ctx.lineWidth = .7; ctx.lineCap = 'round';
+          ctx.strokeStyle = 'rgba(239,179,92,.5)'; ctx.lineWidth = .7; ctx.lineCap = 'round';
           ctx.beginPath(); ctx.moveTo(X - 3, Y); ctx.lineTo(X + 3, Y); ctx.moveTo(X, Y - 3); ctx.lineTo(X, Y + 3); ctx.stroke();
         } else {
-          ctx.fillStyle = 'rgba(122,161,205,.2)'; ctx.beginPath(); ctx.arc(X, Y, .8, 0, 7); ctx.fill();
+          ctx.fillStyle = 'rgba(172,157,120,.2)'; ctx.beginPath(); ctx.arc(X, Y, .8, 0, 7); ctx.fill();
         }
       }
   }
@@ -235,7 +362,7 @@
       const ox = (w - TR.W * scale) / 2, oy = (h - TR.H * scale) / 2;
       mapCtx.setTransform(1, 0, 0, 1, 0, 0);
       mapCtx.clearRect(0, 0, w, h);
-      mapCtx.fillStyle = '#080d19';
+      mapCtx.fillStyle = '#111411';
       mapCtx.fillRect(0, 0, w, h);
       mapCtx.save();
       mapCtx.setTransform(scale, 0, 0, scale, ox, oy);
@@ -244,24 +371,24 @@
       mapCtx.beginPath();
       TR.cps.forEach((point, index) => index ? mapCtx.lineTo(point[0], point[1]) : mapCtx.moveTo(point[0], point[1]));
       mapCtx.closePath();
-      mapCtx.strokeStyle = '#34445c';
+      mapCtx.strokeStyle = '#625a49';
       mapCtx.lineWidth = TR.meta.opts.HW * 2 + 14;
       mapCtx.stroke();
-      mapCtx.strokeStyle = '#18243a';
+      mapCtx.strokeStyle = '#292a25';
       mapCtx.lineWidth = TR.meta.opts.HW * 2;
       mapCtx.stroke();
       mapCtx.setLineDash([5, 8]);
-      mapCtx.strokeStyle = 'rgba(125,215,244,.65)';
+      mapCtx.strokeStyle = 'rgba(207,187,142,.65)';
       mapCtx.lineWidth = 1.5;
       mapCtx.stroke();
       mapCtx.setLineDash([]);
 
       const target = TR.cps[cp % TR.cps.length];
-      mapCtx.fillStyle = '#ff4f91';
+      mapCtx.fillStyle = '#d86a58';
       mapCtx.beginPath(); mapCtx.arc(target[0], target[1], 9, 0, Math.PI * 2); mapCtx.fill();
-      mapCtx.fillStyle = '#9bfbff';
+      mapCtx.fillStyle = '#efb35c';
       mapCtx.beginPath(); mapCtx.arc(car.x, car.y, 8, 0, Math.PI * 2); mapCtx.fill();
-      mapCtx.strokeStyle = '#e7f2ff';
+      mapCtx.strokeStyle = '#e6d9b5';
       mapCtx.lineWidth = 2;
       mapCtx.beginPath(); mapCtx.arc(car.x, car.y, 12, 0, Math.PI * 2); mapCtx.stroke();
       mapCtx.restore();
@@ -273,7 +400,7 @@
     const x1 = x0 + w / scale, y1 = y0 + h / scale;
     mapCtx.setTransform(1, 0, 0, 1, 0, 0);
     mapCtx.clearRect(0, 0, w, h);
-    mapCtx.fillStyle = '#080d19';
+    mapCtx.fillStyle = '#111411';
     mapCtx.fillRect(0, 0, w, h);
     mapCtx.save();
     mapCtx.beginPath();
@@ -281,7 +408,7 @@
     mapCtx.clip();
     mapCtx.setTransform(scale, 0, 0, scale, w / 2 - car.x * scale, h / 2 - car.y * scale);
 
-    mapCtx.strokeStyle = '#1b3049';
+    mapCtx.strokeStyle = '#292a25';
     mapCtx.lineWidth = CITY.roadWidth;
     mapCtx.beginPath();
     for (let x = Math.floor(x0 / CITY.blockSize) * CITY.blockSize; x <= x1; x += CITY.blockSize) {
@@ -299,24 +426,24 @@
       mapCtx.strokeRect(b.x, b.y, b.w, b.h);
     }
     for (const cop of chase.cops) {
-      mapCtx.fillStyle = 'rgba(255,54,94,.35)';
+      mapCtx.fillStyle = 'rgba(216,106,88,.35)';
       mapCtx.beginPath(); mapCtx.arc(cop.x, cop.y, 26, 0, Math.PI * 2); mapCtx.fill();
-      mapCtx.fillStyle = '#ff426b';
+      mapCtx.fillStyle = '#d86a58';
       mapCtx.beginPath(); mapCtx.arc(cop.x, cop.y, 12, 0, Math.PI * 2); mapCtx.fill();
     }
     mapCtx.save();
     mapCtx.translate(car.x, car.y);
     mapCtx.rotate(car.a);
-    mapCtx.shadowColor = '#55efff';
+    mapCtx.shadowColor = '#efb35c';
     mapCtx.shadowBlur = 14;
-    mapCtx.fillStyle = '#9bfbff';
+    mapCtx.fillStyle = '#efb35c';
     mapCtx.beginPath();
     mapCtx.moveTo(20, 0); mapCtx.lineTo(-11, -10); mapCtx.lineTo(-7, 0); mapCtx.lineTo(-11, 10);
     mapCtx.closePath(); mapCtx.fill();
     mapCtx.restore();
     mapCtx.restore();
     mapCtx.setTransform(1, 0, 0, 1, 0, 0);
-    mapCtx.strokeStyle = 'rgba(93,220,255,.3)';
+    mapCtx.strokeStyle = 'rgba(239,179,92,.3)';
     mapCtx.lineWidth = 1;
     mapCtx.beginPath();
     mapCtx.moveTo(w / 2 - 4, h / 2); mapCtx.lineTo(w / 2 + 4, h / 2);
@@ -343,14 +470,22 @@
 
     // tyre marks (one stroke, so overlaps never get darker)
     if (skn) {
-      ctx.lineWidth = 1.05; ctx.lineCap = 'round'; ctx.strokeStyle = 'rgba(6,8,12,.36)';
+      ctx.lineCap = 'round';
+      ctx.lineWidth = 1.05; ctx.strokeStyle = 'rgba(6,8,12,.36)';
       ctx.beginPath();
+      const handMarks = [];
       for (let i = 0; i < skn; i++) {
-        const o = i * 4, x0 = sk[o], y0 = sk[o + 1];
+        const o = i * 5, x0 = sk[o], y0 = sk[o + 1];
         if (x0 < v.x0 - 4 || x0 > v.x1 + 4 || y0 < v.y0 - 4 || y0 > v.y1 + 4) continue;
-        ctx.moveTo(x0, y0); ctx.lineTo(sk[o + 2], sk[o + 3]);
+        if (sk[o + 4]) handMarks.push(o);
+        else { ctx.moveTo(x0, y0); ctx.lineTo(sk[o + 2], sk[o + 3]); }
       }
       ctx.stroke();
+      if (handMarks.length) {
+        ctx.beginPath();
+        for (const o of handMarks) { ctx.moveTo(sk[o], sk[o + 1]); ctx.lineTo(sk[o + 2], sk[o + 3]); }
+        ctx.lineWidth = 1.8; ctx.strokeStyle = 'rgba(142,72,48,.42)'; ctx.stroke();
+      }
     }
 
     if (mode === 'race') TR.drawProps(ctx, v);
@@ -390,7 +525,9 @@
 
     const sp = car.speed;
     const steerRad = Math.max(-.6, Math.min(.6, steerVis * .68 / (1 + sp / 55) * 1.5));
-    drawCar(ctx, SPEC, car.x, car.y, car.a, { steer: steerRad, brake: brakeVis, lights: true });
+    drawCar(ctx, SPEC, car.x, car.y, car.a, {
+      steer: steerRad, brake: brakeVis, lights: true, custom: garageSetup(CARS[carIdx].id)
+    });
 
     for (const p of parts) if (p.kind === 2) {
       ctx.globalAlpha = Math.min(1, p.l * 5);
@@ -432,13 +569,21 @@
 
   let lastSig = '';
   function paintPreview() {
-    if (menuMode !== 'cars' || sel >= CARS.length) { preview.style.display = 'none'; return; }
+    const previewIdx = menuMode === 'cars' ? Math.min(sel, CARS.length - 1) : carIdx;
+    const previewCar = CARS[previewIdx];
+    const setup = garageSetup(previewCar.id);
     preview.style.display = 'block';
     pctx.setTransform(1, 0, 0, 1, 0, 0);
     pctx.clearRect(0, 0, preview.width, preview.height);
-    const a = performance.now() / 2600;
-    pctx.setTransform(22, 0, 0, 22, preview.width / 2, preview.height / 2);
-    drawCar(pctx, CARS[sel].spec, 0, 0, a, { steer: 0, shadow: true });
+    const a = performance.now() / 3400;
+    pctx.setTransform(23, 0, 0, 23, preview.width / 2, preview.height / 2);
+    drawCar(pctx, previewCar.spec, 0, 0, a, { steer: 0, shadow: true, lights: true, custom: setup });
+    $('garage-car').textContent = previewCar.name;
+    $('garage-stats').textContent = menuMode === 'garage' || menuMode === 'garage-option'
+      ? `${GARAGE_OPTIONS.color.find(option => option.id === setup.colorId).name} · ${GARAGE_OPTIONS.paint.find(option => option.id === setup.paint).name} · ${GARAGE_OPTIONS.wing.find(option => option.id === setup.wing).name} · ${GARAGE_OPTIONS.wheels.find(option => option.id === setup.wheels).name} (${setup.wheelStats})`
+      : previewCar.stats;
+    $('garage-section-title').textContent = menuMode === 'garage' || menuMode === 'garage-option' || (menuMode === 'cars' && carMenuReturn === 'garage')
+      ? 'GARAGE BAY' : "TONIGHT'S MACHINE";
   }
 
   function paint() {
@@ -448,8 +593,8 @@
       lastSig = sig;
       menuItemsEl.innerHTML = items.map((it, i) => `<div class="item${i === sel ? ' sel' : ''}">${it.label}</div>`).join('');
       menuItemsEl.querySelectorAll('.item').forEach((e, i) => {
-        e.onclick = () => { items[i].action(); lastSig = ''; };
-        e.onmouseenter = () => { if (sel !== i) { sel = i; } };
+        e.onclick = () => { SFX.unlock(); SFX.select(); items[i].action(); lastSig = ''; };
+        e.onmouseenter = () => { if (sel !== i) { SFX.move(); sel = i; } };
       });
 
       const b = getBest(trackId);
@@ -463,11 +608,22 @@
         $('best').textContent = bb.total ? 'RECORD ' + fmt(bb.total) : (tr ? 'NO RECORD YET' : '');
       } else if (menuMode === 'cars' && sel < CARS.length) {
         $('best').textContent = CARS[sel].stats;
+      } else if (menuMode === 'garage') {
+        $('best').textContent = 'SETUP SAVES PER CAR';
       } else {
         $('best').textContent = '';
       }
     }
+    $('menu-section-title').textContent =
+      menuMode === 'settings' ? 'SETTINGS'
+        : menuMode === 'garage' ? 'CUSTOMIZE YOUR CAR'
+          : menuMode === 'garage-option' ? `CHOOSE ${garageCategory === 'color' ? 'BODY COLOR' : garageCategory === 'paint' ? 'PAINT STYLE' : garageCategory.toUpperCase()}`
+            : menuMode === 'cars' ? 'SELECT YOUR CAR' : 'SELECT YOUR RUN';
     $('menu').classList.toggle('sub', menuMode !== 'main');
+    $('menu').classList.toggle('cars', menuMode === 'cars');
+    $('menu').classList.toggle('settings', menuMode === 'settings');
+    $('menu').classList.toggle('garage', menuMode === 'garage' || menuMode === 'garage-option' || (menuMode === 'cars' && carMenuReturn === 'garage'));
+    $('menu').classList.toggle('garage-option', menuMode === 'garage-option');
     paintPreview();
     $('pad').textContent = Input.connected() ? 'CONTROLLER CONNECTED' : 'PRESS A BUTTON TO CONNECT A CONTROLLER';
   }
@@ -479,10 +635,10 @@
 
     if (state === 'menu') {
       const items = getMenuItems();
-      if (q.up) { sel = (sel - 1 + items.length) % items.length; }
-      if (q.down) { sel = (sel + 1) % items.length; }
-      if (q.ok) { items[sel].action(); lastSig = ''; }
-      if (q.menu && menuMode !== 'main') { menuMode = 'main'; sel = 0; }
+      if (q.up) { SFX.move(); sel = (sel - 1 + items.length) % items.length; }
+      if (q.down) { SFX.move(); sel = (sel + 1) % items.length; }
+      if (q.ok) { SFX.unlock(); SFX.select(); items[sel].action(); lastSig = ''; }
+      if (q.menu && menuMode !== 'main') { SFX.move(); backToParentMenu(); lastSig = ''; }
       paint();
     } else if (q.menu) {
       state = 'menu'; menuMode = 'main'; sel = 0; stage.className = 'menu'; lastSig = '';
@@ -493,11 +649,15 @@
     if (state !== 'menu') {
       if (state === 'count') {
         count -= dt;
-        if (count <= 0) { state = 'play'; t = lapT = 0; say('GO!', .9); } else say(Math.ceil(count), .2);
+        const tick = Math.ceil(count);
+        if (tick > 0 && tick !== lastCountdown) { SFX.tick(); lastCountdown = tick; }
+        if (count <= 0) { state = 'play'; t = lapT = 0; say('GO!', .9); SFX.go(); } else say(tick, .2);
       }
       acc += dt;
       while (acc >= H) { sim(inp); acc -= H; }
 
+      if (inp.hand && !wasHandbrake) SFX.handbrake();
+      wasHandbrake = !!inp.hand;
       if (state === 'play' && car.slip > 30 && car.speed > 35)
         Input.rumble(Math.min(.85, car.slip / 140), .28);
 
@@ -520,10 +680,18 @@
       }
       draw(); hud(dt);
     }
+    SFX.update({
+      speed: car.speed,
+      throttle: state === 'play' ? inp.throttle : 0,
+      slip: car.slip,
+      hand: state === 'play' ? inp.hand : 0,
+      active: state === 'play'
+    });
     requestAnimationFrame(frame);
   }
   window.focus();
-  addEventListener('pointerdown', () => window.focus());
+  addEventListener('pointerdown', () => { window.focus(); SFX.unlock(); });
+  addEventListener('keydown', () => SFX.unlock(), { once: true });
   paint();
   requestAnimationFrame(frame);
 })();

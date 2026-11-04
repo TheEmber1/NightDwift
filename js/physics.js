@@ -19,25 +19,28 @@ class Car {
     // longitudinal
     let acc = i.throttle * ENG * (1 - Math.max(vl, 0) / VMAX) * (on ? 1 : .55) - (on ? .22 : 1.15) * vl;
     if (i.brake > .02) acc -= vl > 8 ? BRK * i.brake : REV * i.brake * Math.max(0, 1 + vl / 60);
-    if (i.hand) acc -= vl * .55;
+    if (i.hand) acc -= vl * .85;
     if (vl > 0) acc -= Math.abs(vt) * .45;
     vl += acc * dt;
     if (!i.throttle && !i.brake && Math.abs(vl) < 3) vl = 0;
 
     // yaw
     const sp = Math.abs(vl), hb = i.hand ? 1 : 0;
-    const sa = i.steer * .68 / (1 + sp / 55);
+    const sa = i.steer * .62 / (1 + sp / 55);
     let wt = vl * Math.tan(sa) / L;
-    if (vl > 0) wt += vt * (hb ? .0008 : .0055);
-    if (hb) wt *= 1.35;
+    if (vl > 0) wt += vt * (hb ? .0018 : .0038);
+    if (hb) {
+      wt += i.steer * Math.sign(vl) * Math.min(1.25, sp / 95);
+      wt *= 1.55;
+    }
     wt = Math.max(-5.5, Math.min(5.5, wt));
     this.w += (wt - this.w) * (1 - Math.exp(-dt * (hb ? 9 : 16)));
 
     // lateral grip
-    let G = GRIP * (on ? 1 : .5);
+    let G = GRIP * .9 * (on ? 1 : .5);
     if (Math.abs(vt) > 28) G *= .72;
     G *= 1 - .42 * i.throttle * Math.min(1, sp / 70);
-    if (hb) G *= .18;
+    if (hb) G *= .09;
     const dv = G * dt;
     vt -= Math.max(-dv, Math.min(dv, vt));
 

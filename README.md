@@ -1,7 +1,8 @@
 # NightDwift
 
-NightDwift is a midnight-styled, browser-based top-down drifting game. Race laps,
-practice freely, or take on an endless city and an escalating police pursuit.
+NightDwift is a pixelated, CRT-styled browser drifting game with a worn arcade
+night-racing look. Race laps, practice freely, or take on an endless city and
+an escalating police pursuit.
 
 ## Run
 
@@ -17,9 +18,10 @@ Then visit `http://localhost:8000/dwifft.html`.
 
 - **W / Up:** accelerate; **S / Down:** brake or reverse
 - **A / Left** and **D / Right:** steer
-- **Space:** handbrake
+- **Space:** handbrake (strong rear breakaway for wider, longer slides)
 - **R:** reset; **Escape / P:** return to the menu
 - **Menu:** W / S or the D-pad to choose; Enter / Space to confirm
+- **Settings:** open from the main menu for control examples and the sound toggle
 - Standard gamepads are supported
 
 ## Modes
@@ -34,12 +36,16 @@ Then visit `http://localhost:8000/dwifft.html`.
   and briefly distract nearby cops. The minimap shows nearby streets,
   buildings, police, and your car. Survival time is shown separately, and the
   best chase score is saved.
+- **Garage:** choose each car's body color, paint pattern, wing, and drift-wheel
+  finish. Wheel compounds display their grip ratings and change handling from
+  sticky to slippery; setups save separately for every car.
 
 ## Project files
 
 - `dwifft.html` — page structure and script loading order
 - `styles.css` — game and menu styles
 - `js/input.js` — keyboard and gamepad controls
+- `js/sound.js` — synthesized engine, tire, and arcade sound effects
 - `js/cars.js` — car definitions and drawing
 - `js/tracks.js` — track definitions and streamed procedural city
 - `js/physics.js` — car handling and physics
@@ -49,4 +55,7 @@ Then visit `http://localhost:8000/dwifft.html`.
 
 Optional car sprite PNGs can be placed in `sprites/`, named after their car
 IDs: `skyline`, `supra`, `porsche`, `rx7`, `silvia`, and `ae86`. Vector cars are
-used when a sprite is not available.
+used when a sprite is not available. The included cars are model-specific
+vector drawings with a low-resolution arcade presentation. Kenney's free
+[CC0 Racing Pack](https://kenney.nl/assets/racing-pack) was considered, but its
+generic vehicles do not depict the specific cars in this game.

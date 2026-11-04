@@ -3,11 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="theme-color" content="#070a14">
+<meta name="theme-color" content="#090a08">
 <title>NightDwift</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -18,21 +15,50 @@
     <canvas id="minimap" width="240" height="160" aria-label="Game minimap"></canvas>
   </div>
   <div id="menu">
-    <h1>NIGHT<i>DWIFT</i></h1>
-    <div id="menu-items"></div>
-    <canvas id="car-preview" width="720" height="380"></canvas>
-    <p id="best"></p>
-    <p class="hint hl">CLICK THE GAME FIRST &nbsp;·&nbsp; W S / D-PAD CHOOSE<br>ENTER / SPACE / CROSS TO START</p>
-    <p class="hint">GAS R2 / W &nbsp; BRAKE L2 / S &nbsp; STEER STICK / A D<br>HANDBRAKE SQUARE, R1 / SPACE<br>RESET TRIANGLE / R &nbsp; MENU OPTIONS / ESC</p>
-    <p id="pad" class="hint"></p>
+    <header class="menu-head">
+      <p class="eyebrow">MIDNIGHT MOTOR CLUB <span>EST. 1994 · TOKYO</span></p>
+      <h1>NIGHT<i>DWIFT</i></h1>
+      <p class="tagline">NO TRAFFIC. NO RULES. JUST THE LONG WAY HOME.</p>
+    </header>
+    <div id="menu-layout">
+      <section class="menu-panel" aria-label="Game modes">
+        <p class="section-label"><span id="menu-section-title">SELECT YOUR RUN</span></p>
+        <div id="menu-items"></div>
+        <p id="best"></p>
+      </section>
+      <section class="garage-panel" aria-label="Featured car">
+        <p class="section-label"><span id="garage-section-title">TONIGHT'S MACHINE</span><span>NO. 01</span></p>
+        <canvas id="car-preview" width="720" height="380"></canvas>
+        <div class="garage-caption">
+          <span class="garage-kicker">SELECTED VEHICLE</span>
+          <strong id="garage-car">SKYLINE</strong>
+          <span id="garage-stats">POWER SLIDES · EASY TO HOLD A WIDE ANGLE</span>
+        </div>
+        <p class="garage-foot">BUILT TO SLIDE &nbsp;·&nbsp; NEVER TO PARK</p>
+      </section>
+      <section class="settings-panel" aria-label="Settings and controls">
+        <p class="section-label">CONTROL DECK <span>KEYBOARD · GAMEPAD</span></p>
+        <div class="control-list">
+          <div class="control-row"><span>STEER</span><strong>A / D <i>·</i> LEFT STICK</strong></div>
+          <div class="control-row"><span>GAS</span><strong>W <i>·</i> R2 / RT</strong></div>
+          <div class="control-row"><span>BRAKE / REVERSE</span><strong>S <i>·</i> L2 / LT</strong></div>
+          <div class="control-row"><span>HANDBRAKE</span><strong>SPACE <i>·</i> □ / R1</strong></div>
+          <div class="control-row"><span>RESET</span><strong>R <i>·</i> △ / Y</strong></div>
+          <div class="control-row"><span>MENU / PAUSE</span><strong>ESC / P <i>·</i> OPTIONS / START</strong></div>
+        </div>
+        <p id="pad" class="hint control-status"></p>
+        <p class="settings-note">W / S OR D-PAD CHOOSE &nbsp;·&nbsp; ENTER SELECT<br>ESC / OPTIONS BACK</p>
+      </section>
+    </div>
   </div>
 </div>
 <script src="js/error-handler.js"></script>
 <script src="js/input.js"></script>
-<script src="js/cars.js"></script>
+<script src="js/sound.js"></script>
+<script src="js/cars.js?v=garage-2"></script>
 <script src="js/tracks.js"></script>
 <script src="js/physics.js"></script>
 <script src="js/chase.js"></script>
-<script src="js/game.js"></script>
+<script src="js/game.js?v=garage-2"></script>
 </body>
 </html>

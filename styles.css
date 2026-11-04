@@ -1,51 +1,113 @@
-:root{--bg:#070a14;--ink:#e7f2ff;--mute:#8492ac;--acc:#49dfff}
+:root{--bg:#090a08;--ink:#e6d9b5;--mute:#948b74;--acc:#efb35c;--hot:#d86a58}
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%;overflow:hidden;background:var(--bg)}
-body{font-family:Inter,"SF Pro Display",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:var(--ink);-webkit-font-smoothing:antialiased}
+body{font-family:"Courier New",monospace;color:var(--ink);-webkit-font-smoothing:none}
 #stage{position:fixed;inset:0}
-canvas#c{display:block;width:100%;height:100%}
+canvas#c{display:block;width:100%;height:100%;image-rendering:pixelated}
 #hud,#menu{position:absolute;inset:0}
+#stage::after{content:"";position:absolute;inset:0;z-index:5;pointer-events:none;opacity:.62;
+  background:repeating-linear-gradient(0deg,rgba(0,0,0,.2) 0 1px,transparent 1px 3px),
+    radial-gradient(ellipse at center,transparent 48%,rgba(0,0,0,.4) 100%),
+    linear-gradient(90deg,rgba(239,179,92,.035),transparent 35% 65%,rgba(93,142,125,.035));
+  mix-blend-mode:soft-light}
 
 /* HUD */
-#hud{pointer-events:none;font-size:clamp(11px,1.7vmin,18px);font-variant-numeric:tabular-nums;text-shadow:0 1px 10px rgba(0,0,0,.55)}
+#hud{pointer-events:none;font-size:clamp(11px,1.7vmin,18px);font-variant-numeric:tabular-nums;text-shadow:2px 2px 0 rgba(0,0,0,.9)}
 #hud>div{position:absolute;line-height:1.3}
-#tl{left:3.2vmin;top:3.2vmin}
-#tr{right:3.2vmin;top:3.2vmin;text-align:right}
+#tl{left:3.2vmin;top:3.2vmin;padding:.65em .8em;border-left:3px solid var(--acc);background:rgba(9,10,8,.64)}
+#tr{right:3.2vmin;top:3.2vmin;text-align:right;padding:.65em .8em;border-right:3px solid var(--acc);background:rgba(9,10,8,.64)}
 #bl{left:3.2vmin;bottom:3.2vmin}
 #br{right:3.2vmin;bottom:3.2vmin;text-align:right}
-.lbl{display:block;font-size:.7em;font-weight:600;letter-spacing:.18em;color:var(--mute);text-transform:uppercase}
+.lbl{display:block;font-size:.7em;font-weight:700;letter-spacing:.14em;color:var(--mute);text-transform:uppercase}
 .val{display:block;font-size:1.45em;font-weight:700;margin-bottom:.5em}
 .val.big{font-size:2.6em;font-weight:800;line-height:1;margin-bottom:0}
-.unit{font-size:.8em;font-weight:600;letter-spacing:.14em;color:var(--mute);margin-left:.4em}
+.unit{font-size:.8em;font-weight:700;letter-spacing:.12em;color:var(--mute);margin-left:.4em}
 .mult{font-size:1.1em;font-weight:700;color:var(--acc);margin-left:.4em}
-#msg{left:0;right:0;top:24%;text-align:center;font-size:clamp(44px,12vmin,150px);font-weight:800;letter-spacing:.02em;line-height:1.05;display:none}
+#msg{left:0;right:0;top:24%;text-align:center;font-size:clamp(44px,12vmin,150px);font-weight:900;letter-spacing:.04em;line-height:1.05;display:none;color:var(--ink);text-shadow:4px 4px 0 #111}
 #msg small{display:block;font-size:.17em;font-weight:600;letter-spacing:.16em;line-height:2.2;color:var(--ink)}
 .hl{color:var(--acc)}
 
 /* menu */
-#menu{display:none;flex-direction:column;align-items:center;justify-content:center;gap:2.2vmin;
-  background:radial-gradient(110% 85% at 50% 25%,#172347 0%,#0b1021 48%,#05070e 100%)}
+#menu{display:none;flex-direction:column;align-items:center;justify-content:center;gap:clamp(18px,3.8vmin,42px);padding:5vmin 7vw;
+  background-color:#10120f;background-image:linear-gradient(rgba(196,164,103,.04) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(196,164,103,.04) 1px,transparent 1px),
+    radial-gradient(ellipse at 80% 45%,#3b3124 0%,#1a1b16 48%,#090a08 100%);
+  background-size:28px 28px,28px 28px,auto}
 .menu #menu{display:flex}
 .menu #hud{display:none}
-h1{font-size:clamp(34px,8vmin,96px);font-weight:800;letter-spacing:.14em;margin-right:-.14em;line-height:1;white-space:nowrap}
+.menu-head{width:min(1040px,100%);text-align:left;border-bottom:1px solid rgba(239,179,92,.35);padding-bottom:1.6vmin}
+.eyebrow,.section-label,.garage-kicker{font-size:clamp(9px,1.15vmin,12px);font-weight:700;letter-spacing:.2em;color:var(--acc)}
+.eyebrow{display:flex;justify-content:space-between;margin-bottom:.6em}
+.eyebrow span,.section-label span{color:var(--mute)}
+h1{font-size:clamp(38px,7vmin,82px);font-weight:900;letter-spacing:.06em;margin-right:-.06em;line-height:.98;white-space:nowrap;color:var(--ink);text-shadow:5px 5px 0 #191713}
 h1 i{font-style:normal;color:var(--acc)}
-#menu-items{display:flex;flex-direction:column;align-items:center;gap:.5vmin}
-.item{font-size:clamp(13px,2.4vmin,26px);font-weight:700;letter-spacing:.16em;color:#6f7b8a;cursor:pointer;
-  padding:.45em 1.3em;border-radius:999px;transition:color .15s,background .15s;display:flex;align-items:center;gap:.7em;white-space:nowrap}
-.item.sel{color:var(--bg);background:var(--acc)}
-.dot{width:.7em;height:.7em;border-radius:50%;box-shadow:inset 0 0 0 1px rgba(255,255,255,.35);flex:none}
-#car-preview{width:min(360px,44vmin);aspect-ratio:360/190;display:none}
-#menu.sub{gap:1.2vmin}
-#menu.sub .hint{display:none}
-#menu.sub h1{font-size:clamp(26px,6vmin,64px)}
-#menu.sub #car-preview{width:min(300px,34vmin)}
-#best{font-size:clamp(10px,1.5vmin,15px);font-weight:600;letter-spacing:.16em;color:var(--acc);min-height:1.3em;text-align:center}
-.hint{font-size:clamp(9px,1.3vmin,13px);font-weight:500;letter-spacing:.12em;line-height:2.1;text-align:center;color:var(--mute)}
+.tagline{margin-top:.65em;font-size:clamp(9px,1.25vmin,13px);letter-spacing:.15em;color:#a89c80}
+#menu-layout{width:min(1040px,100%);display:grid;grid-template-columns:1fr .9fr;gap:clamp(20px,4vw,60px);align-items:stretch}
+.menu-panel,.garage-panel{min-width:0;border:1px solid rgba(239,179,92,.28);background:rgba(8,9,7,.55);box-shadow:6px 6px 0 rgba(0,0,0,.2);padding:clamp(16px,2.4vmin,28px)}
+.menu-panel{display:flex;flex-direction:column}
+.section-label{display:flex;justify-content:space-between;margin-bottom:1.25em}
+#menu-items{display:flex;flex-direction:column;align-items:stretch;gap:4px}
+.item{font-size:clamp(13px,2.1vmin,21px);font-weight:700;letter-spacing:.11em;color:#827b68;cursor:pointer;
+  padding:.6em .8em;border-left:3px solid transparent;transition:color .12s,background .12s;display:flex;align-items:center;gap:.7em;white-space:normal}
+.item.sel{color:#17140e;background:var(--acc);border-left-color:#ffe0a2;box-shadow:3px 3px 0 #16140f}
+.dot{width:.7em;height:.7em;border-radius:0;box-shadow:inset 0 0 0 1px rgba(255,255,255,.5);flex:none}
+.option-name{flex:1}
+.option-stat{margin-left:auto;font-size:clamp(8px,.95vmin,10px);font-weight:700;letter-spacing:.06em;text-align:right;color:var(--mute);white-space:nowrap}
+.item.sel .option-stat{color:#574226}
+#best{font-size:clamp(9px,1.25vmin,13px);font-weight:700;letter-spacing:.1em;color:var(--acc);min-height:1.5em;margin-top:1.1em}
+.hint{font-size:clamp(8px,1.05vmin,11px);font-weight:600;letter-spacing:.06em;line-height:1.9;color:var(--mute)}
 .hint.hl{color:var(--ink)}
+#menu-section-title{color:var(--acc)}
+.garage-panel{position:relative;display:flex;flex-direction:column;justify-content:space-between;overflow:hidden}
+.garage-panel::after{content:"";position:absolute;inset:auto -12% 18% 30%;height:28%;border-top:1px solid rgba(239,179,92,.2);transform:rotate(-18deg);pointer-events:none}
+#car-preview{display:block;width:100%;aspect-ratio:720/380;max-height:34vh;border-block:1px solid rgba(239,179,92,.2);background:radial-gradient(ellipse,rgba(239,179,92,.09),transparent 65%);image-rendering:pixelated}
+.garage-caption{display:flex;flex-direction:column;gap:.35em}
+.garage-caption strong{font-size:clamp(22px,3.1vmin,36px);letter-spacing:.08em;color:var(--ink)}
+.garage-caption>span:last-child{font-size:clamp(8px,1.05vmin,11px);letter-spacing:.08em;color:var(--mute)}
+.garage-foot{text-align:right;font-size:clamp(8px,1vmin,10px);letter-spacing:.13em;color:var(--acc)}
+.settings-panel{display:none;min-width:0;border:1px solid rgba(239,179,92,.28);background:rgba(8,9,7,.55);box-shadow:6px 6px 0 rgba(0,0,0,.2);padding:clamp(16px,2.4vmin,28px);flex-direction:column}
+#menu.settings .garage-panel{display:none}
+#menu.settings .settings-panel{display:flex}
+#menu.settings #menu-layout{grid-template-columns:.75fr 1.25fr}
+.control-list{display:flex;flex-direction:column}
+.control-row{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:.9em .2em;border-bottom:1px solid rgba(239,179,92,.14)}
+.control-row span{font-size:clamp(9px,1.1vmin,12px);letter-spacing:.1em;color:var(--mute)}
+.control-row strong{font-size:clamp(9px,1.15vmin,13px);letter-spacing:.06em;text-align:right;color:var(--ink)}
+.control-row i{font-style:normal;color:var(--acc)}
+.control-status{margin-top:auto;padding-top:1.2em;color:var(--acc)}
+.settings-note{margin-top:1em;font-size:clamp(8px,1vmin,10px);letter-spacing:.07em;line-height:1.9;color:var(--mute)}
+#menu.sub #menu-layout{grid-template-columns:1fr .9fr}
+#menu.sub .menu-head{width:min(900px,100%)}
+#menu.sub h1{font-size:clamp(30px,5.5vmin,62px)}
+#menu.sub #car-preview{max-height:29vh}
+#menu.garage #menu-layout{grid-template-columns:1fr .9fr}
+#menu.garage-option #menu-layout{grid-template-columns:1fr .9fr}
 #minimap{display:none;position:absolute;left:3.2vmin;bottom:3.2vmin;width:clamp(150px,24vmin,230px);height:auto;aspect-ratio:3/2;
-  border:1px solid rgba(78,215,255,.62);border-radius:8px;background:#070a14;
-  box-shadow:0 0 18px rgba(49,184,255,.16),inset 0 0 14px rgba(6,12,28,.8)}
+  border:2px solid rgba(239,179,92,.65);border-radius:0;background:#10120f;
+  box-shadow:4px 4px 0 rgba(0,0,0,.6),inset 0 0 14px rgba(6,12,8,.8);image-rendering:pixelated}
 .chase #minimap,.race #minimap{display:block}
 .chase #bl,.race #bl{bottom:calc(3.2vmin + clamp(100px,16vmin,154px) + 12px)}
-.chase #br .val.big{color:#ff72c6}
-#best{max-width:min(76vw,620px);line-height:1.6}
+.chase #br .val.big{color:var(--hot)}
+@media(max-width:700px){
+  #menu{padding:4vmin 5vw;gap:3vmin;overflow:auto}
+  #menu-layout,#menu.sub #menu-layout{grid-template-columns:1fr;gap:2vmin}
+  .menu-panel,.garage-panel{padding:12px}
+  .garage-panel{display:none}
+  .settings-panel{padding:12px}
+  #menu.sub .garage-panel{display:flex}
+  #menu.settings .garage-panel{display:none}
+  #menu.settings #menu-layout{grid-template-columns:1fr}
+  #menu.settings .settings-panel{display:flex}
+  #menu.garage #menu-layout,#menu.garage-option #menu-layout{grid-template-columns:1fr}
+}
+@media(max-height:620px){
+  #menu{gap:2vmin;padding-block:2vmin}
+  .menu-head{padding-bottom:1vmin}
+  h1{font-size:clamp(32px,6vmin,60px)}
+  #menu-layout{gap:2vw}
+  .menu-panel,.garage-panel{padding:12px}
+  .settings-panel{padding:12px}
+  #menu-items{gap:0}
+  .item{padding:.38em .7em}
+  #car-preview{max-height:25vh}
+}

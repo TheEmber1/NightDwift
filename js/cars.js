@@ -44,6 +44,7 @@ function rect(c, x0, y0, x1, y1, r) {
 const mirrorRect = (c, x0, ya, x1, yb, r) => { rect(c, x0, ya, x1, yb, r); rect(c, x0, -yb, x1, -ya, r); };
 
 const GLASS = '#121a24', LAMP = '#f3efe2', TAIL = '#a8262c', TAIL_ON = '#ff4044', DARK = '#161c25';
+const WHEEL_COLORS = { steel: '#c4b998', bronze: '#b57845', white: '#e5e0d1', gunmetal: '#667078', gold: '#d1a944' };
 
 const CAR_SPECS = {
   // ---- Nissan Skyline GT-R (R34): square-shouldered, big wing, four round tail lamps ----
@@ -57,8 +58,10 @@ const CAR_SPECS = {
       c.fillStyle = LAMP; c.beginPath(); mirrorRect(c, 7.0, 1.3, 7.9, 2.8, 0.45); c.fill();      // headlights
       c.fillStyle = o.brake ? TAIL_ON : TAIL;                                                     // 4 round tail lamps
       for (const y of [-2.4, -1.2, 1.2, 2.4]) { c.beginPath(); c.arc(-7.5, y, 0.52, 0, 7); c.fill(); }
-      c.fillStyle = '#10151c'; c.beginPath(); rect(c, -6.9, -2.85, -5.5, 2.85, 0.4); c.fill();    // wing
-      c.fillStyle = 'rgba(255,255,255,.14)'; c.beginPath(); rect(c, -6.6, -2.6, -6.3, 2.6, 0.15); c.fill();
+      if (!o.custom || o.custom.wing === 'stock') {
+        c.fillStyle = '#10151c'; c.beginPath(); rect(c, -6.9, -2.85, -5.5, 2.85, 0.4); c.fill();
+        c.fillStyle = 'rgba(255,255,255,.14)'; c.beginPath(); rect(c, -6.6, -2.6, -6.3, 2.6, 0.15); c.fill();
+      }
     }
   },
   // ---- Toyota Supra (A80): long bonnet, rear-set bubble cabin, huge wing ----
@@ -72,10 +75,12 @@ const CAR_SPECS = {
       c.beginPath(); for (const s of [-1, 1]) { c.moveTo(7.2, s * 0.9); c.lineTo(2.3, s * 1.45); } c.stroke();
       c.fillStyle = LAMP; c.beginPath(); mirrorRect(c, 6.5, 1.4, 7.6, 2.6, 0.5); c.fill();
       c.fillStyle = o.brake ? TAIL_ON : TAIL; c.beginPath(); rect(c, -7.95, -2.7, -7.45, 2.7, 0.25); c.fill();
-      const wc = mixc(col, 0.4, 0);                                                                // big GT wing
-      c.fillStyle = wc; c.beginPath(); rect(c, -7.3, -3.15, -5.8, 3.15, 0.5); c.fill();
-      c.fillStyle = 'rgba(255,255,255,.18)'; c.beginPath(); rect(c, -7.0, -2.9, -6.6, 2.9, 0.2); c.fill();
-      c.fillStyle = DARK; c.beginPath(); rect(c, -7.3, -3.15, -5.8, -2.8, 0.15); rect(c, -7.3, 2.8, -5.8, 3.15, 0.15); c.fill();
+      if (!o.custom || o.custom.wing === 'stock') {
+        const wc = mixc(col, 0.4, 0);
+        c.fillStyle = wc; c.beginPath(); rect(c, -7.3, -3.15, -5.8, 3.15, 0.5); c.fill();
+        c.fillStyle = 'rgba(255,255,255,.18)'; c.beginPath(); rect(c, -7.0, -2.9, -6.6, 2.9, 0.2); c.fill();
+        c.fillStyle = DARK; c.beginPath(); rect(c, -7.3, -3.15, -5.8, -2.8, 0.15); rect(c, -7.3, 2.8, -5.8, 3.15, 0.15); c.fill();
+      }
     }
   },
   // ---- Porsche 911: rear-engine teardrop, round lamps on fender humps, fastback ----
@@ -110,8 +115,10 @@ const CAR_SPECS = {
       c.fillStyle = LAMP; c.beginPath(); mirrorRect(c, 6.7, 1.7, 7.35, 2.7, 0.3); c.fill();             // retracted pop-ups
       c.fillStyle = o.brake ? TAIL_ON : TAIL;
       for (const [x, y] of [[-6.9,-1.1],[-6.6,-2.15],[-6.9,1.1],[-6.6,2.15]]) { c.beginPath(); c.arc(x, y, 0.45, 0, 7); c.fill(); }
-      c.fillStyle = mixc(col, 0.35, 0); c.beginPath(); rect(c, -6.1, -2.7, -5.0, 2.7, 0.4); c.fill();  // wing
-      c.fillStyle = 'rgba(255,255,255,.16)'; c.beginPath(); rect(c, -5.9, -2.5, -5.6, 2.5, 0.12); c.fill();
+      if (!o.custom || o.custom.wing === 'stock') {
+        c.fillStyle = mixc(col, 0.35, 0); c.beginPath(); rect(c, -6.1, -2.7, -5.0, 2.7, 0.4); c.fill();
+        c.fillStyle = 'rgba(255,255,255,.16)'; c.beginPath(); rect(c, -5.9, -2.5, -5.6, 2.5, 0.12); c.fill();
+      }
     }
   },
   // ---- Nissan Silvia (S15): compact three-box coupe, slim lamps, boot lip ----
@@ -125,7 +132,9 @@ const CAR_SPECS = {
       c.beginPath(); for (const s of [-1, 1]) { c.moveTo(7.3, s * 0.8); c.lineTo(3.2, s * 1.2); } c.stroke();
       c.fillStyle = LAMP; c.beginPath(); mirrorRect(c, 6.7, 1.2, 7.6, 2.7, 0.4); c.fill();
       c.fillStyle = o.brake ? TAIL_ON : TAIL; c.beginPath(); mirrorRect(c, -7.75, 0.9, -7.2, 2.6, 0.25); c.fill();
-      c.fillStyle = mixc(col, 0.3, 0); c.beginPath(); rect(c, -6.9, -2.45, -6.2, 2.45, 0.3); c.fill();
+      if (!o.custom || o.custom.wing === 'stock') {
+        c.fillStyle = mixc(col, 0.3, 0); c.beginPath(); rect(c, -6.9, -2.45, -6.2, 2.45, 0.3); c.fill();
+      }
     }
   },
   // ---- Toyota Sprinter Trueno AE86: tiny and boxy, black bonnet "panda", hatch ----
@@ -167,6 +176,8 @@ for (const k in CAR_SPECS) {
 
 // Draws one car. o = { steer (front wheel angle, radians), brake, shadow, lights }
 function drawCar(c, S, x, y, a, o = {}) {
+  const custom = o.custom;
+  const bodyColor = custom?.color || S.color;
   if (o.shadow !== false) {
     c.save(); c.translate(x + 0.9, y + 1.5); c.rotate(a);
     c.fillStyle = 'rgba(0,0,0,.32)'; c.fill(S.body);
@@ -184,7 +195,7 @@ function drawCar(c, S, x, y, a, o = {}) {
     c.fillStyle = g; c.beginPath(); c.arc(x0, 0, 6, 0, 7); c.fill();
   }
   const spr = SPRITES[S.key];
-  if (spr) {                                         // sprite mode
+  if (spr && !custom) {                              // sprite mode
     const up = Math.abs(Math.abs(SPRITE_FACING) - Math.PI / 2) < .01, len = S.half[0][0] * 2;
     const sc = len / (up ? spr.height : spr.width);
     c.rotate(-SPRITE_FACING);
@@ -193,21 +204,69 @@ function drawCar(c, S, x, y, a, o = {}) {
     return;
   }
   // wheels (front pair steers)
-  c.fillStyle = '#0c1015';
   for (const [wx, steer] of [[S.fx, o.steer || 0], [S.rx, 0]]) for (const s of [-1, 1]) {
     c.save(); c.translate(wx, s * (S.hw - 0.5)); c.rotate(steer);
+    c.fillStyle = '#0c1015';
     c.beginPath(); rect(c, -1.1, -0.55, 1.1, 0.55, 0.35); c.fill(); c.restore();
+    c.save(); c.translate(wx, s * (S.hw - 0.5));
+    c.fillStyle = WHEEL_COLORS[custom?.wheels] || '#69717a';
+    c.beginPath(); c.arc(0, 0, 0.43, 0, Math.PI * 2); c.fill();
+    c.fillStyle = '#1b1b18';
+    c.beginPath(); c.arc(0, 0, 0.14, 0, Math.PI * 2); c.fill();
+    c.strokeStyle = 'rgba(255,255,255,.62)';
+    c.lineWidth = 0.1;
+    c.beginPath(); c.arc(0, 0, 0.36, 0, Math.PI * 2); c.stroke();
+    c.restore();
   }
   // body
-  c.fillStyle = S.color; c.fill(S.body);
-  if (S.paint) S.paint(c, S.color, S.body);
+  c.fillStyle = bodyColor; c.fill(S.body);
+  if ((!custom || custom.paint === 'factory') && S.paint) S.paint(c, bodyColor, S.body);
+  if (custom) {
+    c.save(); c.clip(S.body);
+    if (custom.paint === 'stripes') {
+      c.fillStyle = mixc(bodyColor, 0.68);
+      c.fillRect(4.0, -1.7, 3.8, 0.62);
+      c.fillRect(4.0, 1.08, 3.8, 0.62);
+      c.fillRect(-7.6, -1.7, 2.2, 0.62);
+      c.fillRect(-7.6, 1.08, 2.2, 0.62);
+    } else if (custom.paint === 'two-tone') {
+      c.fillStyle = mixc(bodyColor, 0.62, 0);
+      c.fillRect(-8.2, -3.2, 3.4, 6.4);
+      c.fillStyle = mixc(bodyColor, 0.5);
+      c.fillRect(-4.5, -3.2, 0.42, 6.4);
+    } else if (custom.paint === 'panda') {
+      c.fillStyle = '#171a18';
+      c.fillRect(2.8, -2.7, 5, 5.4);
+      c.fillRect(-6.2, -3.05, 1.5, 0.55);
+      c.fillRect(-6.2, 2.5, 1.5, 0.55);
+    }
+    c.restore();
+  }
   c.save(); c.clip(S.body); c.strokeStyle = 'rgba(0,0,0,.2)'; c.lineWidth = 1.1; c.stroke(S.body); c.restore();
   // glasshouse
   c.fillStyle = GLASS; c.fill(S.glassP);
-  c.fillStyle = S.roofColor || mixc(S.color, 0.1); if (S.key === 'ae86') c.fillStyle = '#f4f6f8';
+  c.fillStyle = S.roofColor || mixc(bodyColor, 0.1);
+  if (S.key === 'ae86' && (!custom || custom.paint === 'factory')) c.fillStyle = '#f4f6f8';
   c.fill(S.roofP);
   c.strokeStyle = 'rgba(255,255,255,.12)'; c.lineWidth = 0.18; c.stroke(S.glassP);
-  S.detail(c, S.color, o);
+  S.detail(c, bodyColor, o);
+  if (custom && custom.wing !== 'stock' && custom.wing !== 'none') {
+    if (custom.wing === 'gt') {
+      c.fillStyle = '#171a18';
+      c.beginPath(); rect(c, -7.0, -2.8, -5.8, -1.35, 0.12); rect(c, -7.0, 1.35, -5.8, 2.8, 0.12); c.fill();
+      c.fillStyle = bodyColor;
+      c.beginPath(); rect(c, -7.7, -3.5, -5.1, 3.5, 0.28); c.fill();
+      c.strokeStyle = 'rgba(255,255,255,.7)'; c.lineWidth = 0.18; c.stroke();
+      c.fillStyle = 'rgba(20,20,18,.72)';
+      c.fillRect(-7.45, -3.3, 1.9, 0.22);
+      c.fillRect(-7.45, 3.08, 1.9, 0.22);
+    } else if (custom.wing === 'ducktail') {
+      c.fillStyle = mixc(bodyColor, 0.5, 0);
+      c.beginPath(); rect(c, -7.85, -2.85, -6.15, 2.85, 0.3); c.fill();
+      c.fillStyle = mixc(bodyColor, 0.5);
+      c.fillRect(-7.7, -2.62, 0.3, 5.24);
+    }
+  }
   c.restore();
 }
 for (const k in CAR_SPECS) CAR_SPECS[k].key = k;

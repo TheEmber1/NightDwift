@@ -10,7 +10,7 @@ function spline(P, n) {
   return out;
 }
 // Vector track: everything is drawn live from paths, so it stays razor sharp at any zoom.
-const ROAD = '#18243a', EDGE = '#405573', MARK = 'rgba(96,199,235,.24)';
+const ROAD = '#292a25', EDGE = '#68604d', MARK = 'rgba(210,190,145,.35)';
 
 function buildTrack(P, opts = {}) {
   const W = opts.W || 1400, H = opts.H || 940, HW = opts.HW || 24, SEG = opts.SEG || 24;
@@ -33,6 +33,21 @@ function buildTrack(P, opts = {}) {
     let minD = 1e9;
     for (let k = 0; k < pts.length; k += 3) { const dx = pts[k][0] - px, dy = pts[k][1] - py; minD = Math.min(minD, dx * dx + dy * dy); }
     if (minD > (HW + 14 + r) * (HW + 14 + r)) trees.push({ x: px, y: py, r });
+  }
+
+  const wear = [];
+  for (let i = 0; i < pts.length * 1.6; i++) {
+    const index = Math.floor(rnd() * pts.length), p = pts[index];
+    const prev = pts[(index + pts.length - 1) % pts.length], next = pts[(index + 1) % pts.length];
+    const dx = next[0] - prev[0], dy = next[1] - prev[1], length = Math.hypot(dx, dy) || 1;
+    const offset = (rnd() - .5) * HW * 1.65;
+    wear.push({
+      x: p[0] - dy / length * offset,
+      y: p[1] + dx / length * offset,
+      w: .8 + rnd() * 3.2,
+      h: .8 + rnd() * 2,
+      color: rnd() > .58 ? 'rgba(10,11,9,.24)' : 'rgba(194,168,119,.15)'
+    });
   }
 
   // drivable mask at 1 unit resolution (curbs count as road)
@@ -59,6 +74,10 @@ function buildTrack(P, opts = {}) {
       c.setLineDash([9, 9]); c.strokeStyle = curbs[1]; c.stroke(road);
       c.setLineDash([]); c.lineWidth = HW * 2; c.strokeStyle = EDGE; c.stroke(road);              // edge lines
       c.lineWidth = HW * 2 - 2.4; c.strokeStyle = ROAD; c.stroke(road);                           // asphalt
+      for (const mark of wear) if (vis(v, mark.x, mark.y, 3)) {
+        c.fillStyle = mark.color;
+        c.fillRect(mark.x, mark.y, mark.w, mark.h);
+      }
       c.lineWidth = .8; c.strokeStyle = MARK; c.setLineDash([6, 12]); c.stroke(road); c.setLineDash([]);
       if (vis(v, line.x, line.y, HW + 10)) {                                                      // start / finish
         c.save(); c.translate(line.x, line.y); c.rotate(line.a);
@@ -85,25 +104,25 @@ const TRACKS = [
     id: 'circuit', name: 'CIRCUIT', laps: 3,
     P: [[300, 150], [620, 120], [940, 150], [1180, 260], [1230, 440], [1080, 570], [860, 520],
         [760, 650], [880, 790], [620, 830], [380, 770], [210, 620], [250, 440], [150, 290]],
-    opts: { W: 1400, H: 940, HW: 31, seed: 7, props: 40, ground: '#101a1d', curbs: ['#e04770', '#a8d7e8'] }
+    opts: { W: 1400, H: 940, HW: 31, seed: 7, props: 40, ground: '#171b17', curbs: ['#a85546', '#c4b998'] }
   },
   {
     id: 'tech', name: 'TECHNICAL', laps: 3,
     P: [[200, 200], [400, 120], [650, 180], [900, 100], [1100, 250], [1050, 450], [850, 520],
         [700, 400], [550, 550], [400, 480], [250, 600], [150, 450], [180, 300]],
-    opts: { W: 1300, H: 800, HW: 27, seed: 42, props: 25, ground: '#101627', curbs: ['#f2c230', '#1b2129'], tree1: '#202d43', tree2: '#293955' }
+    opts: { W: 1300, H: 800, HW: 27, seed: 42, props: 25, ground: '#191a17', curbs: ['#c2a15c', '#403d34'], tree1: '#242c23', tree2: '#30362a' }
   },
   {
     id: 'flow', name: 'FLOW', laps: 3,
     P: [[250, 300], [500, 150], [800, 200], [1100, 150], [1250, 350], [1150, 550], [900, 600],
         [700, 500], [500, 650], [300, 580], [150, 450], [180, 280]],
-    opts: { W: 1400, H: 850, HW: 33, seed: 99, props: 55, ground: '#0d1b25', curbs: ['#2f9bd6', '#a8d7e8'], tree1: '#173337', tree2: '#1f454b' }
+    opts: { W: 1400, H: 850, HW: 33, seed: 99, props: 55, ground: '#151b1b', curbs: ['#558c89', '#c4b998'], tree1: '#1b302c', tree2: '#284139' }
   },
   {
     id: 'dock', name: 'DOCKSIDE', laps: 3,
     P: [[180, 400], [350, 200], [600, 150], [900, 220], [1150, 180], [1250, 400], [1100, 600],
         [850, 700], [600, 650], [400, 750], [200, 650], [120, 500]],
-    opts: { W: 1400, H: 900, HW: 29, seed: 13, props: 30, ground: '#171820', curbs: ['#ff6a8a', '#a8d7e8'], tree1: '#292b34', tree2: '#343644' }
+    opts: { W: 1400, H: 900, HW: 29, seed: 13, props: 30, ground: '#1b1918', curbs: ['#a75d61', '#c4b998'], tree1: '#302725', tree2: '#40312d' }
   }
 ];
 
@@ -111,7 +130,7 @@ const TRACK_MAP = {};
 TRACKS.forEach(t => { TRACK_MAP[t.id] = buildTrack(t.P, t.opts); TRACK_MAP[t.id].meta = t; });
 
 function buildCity() {
-  const BLOCK = 400, ROAD = 152, palette = ['#182438', '#1d2138', '#173139', '#302038', '#202a3a', '#2b2637'];
+  const BLOCK = 400, ROAD = 152, palette = ['#26302a', '#302b27', '#273233', '#352a2d', '#2c302b', '#342d31'];
   const blockCache = new Map();
   const blockKey = (x, y) => `${x},${y}`;
   const getBlock = (bx, by) => {
@@ -216,11 +235,11 @@ function buildCity() {
     },
     isBuilding(x, y) { return !!buildingAt(x, y); },
     drawGround(c, v, viewport) {
-      c.fillStyle = '#070b15';
+      c.fillStyle = '#111411';
       c.fillRect(viewport.x0, viewport.y0, viewport.x1 - viewport.x0, viewport.y1 - viewport.y0);
       c.lineCap = 'butt';
       c.setLineDash([]);
-      c.strokeStyle = '#101a2b';
+      c.strokeStyle = '#625a49';
       c.lineWidth = ROAD + 18;
       c.beginPath();
       for (let x = Math.floor(viewport.x0 / BLOCK) * BLOCK; x <= viewport.x1 + BLOCK; x += BLOCK) {
@@ -230,15 +249,15 @@ function buildCity() {
         c.moveTo(viewport.x0, y); c.lineTo(viewport.x1, y);
       }
       c.stroke();
-      c.strokeStyle = '#121f34';
+      c.strokeStyle = '#292a25';
       c.lineWidth = ROAD;
       c.stroke();
-      c.strokeStyle = 'rgba(71,145,192,.28)';
-      c.lineWidth = .8;
-      c.setLineDash([6, 12]);
+      c.strokeStyle = 'rgba(207,187,142,.3)';
+      c.lineWidth = 1.2;
+      c.setLineDash([12, 16]);
       c.stroke();
       c.setLineDash([]);
-      c.fillStyle = 'rgba(79,180,215,.3)';
+      c.fillStyle = 'rgba(202,170,109,.26)';
       const step = 400;
       for (let x = Math.floor(viewport.x0 / step) * step; x <= viewport.x1; x += step)
         for (let y = Math.floor(viewport.y0 / step) * step; y <= viewport.y1; y += step)
@@ -264,7 +283,7 @@ function buildCity() {
           const columns = Math.max(2, Math.floor(b.w / 25));
           const rows = Math.max(1, Math.floor(b.floors / 2));
           for (let row = 0; row < rows; row++) {
-            c.fillStyle = row % 2 ? 'rgba(65,205,255,.6)' : 'rgba(251,91,178,.48)';
+            c.fillStyle = row % 2 ? 'rgba(204,166,100,.5)' : 'rgba(171,93,76,.45)';
             for (let col = 0; col < columns; col++)
               c.fillRect(b.x + 10 + col * (b.w - 20) / columns, b.y + 16 + row * 14, 5, 7);
           }
