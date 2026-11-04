@@ -27,8 +27,10 @@ Then visit `http://localhost:8000/dwifft.html`.
 
 - **Time Attack:** race one circuit on a chosen track and set a best time. A
   finish screen compares your run with your previous and current best, lists
-  your five latest local times, and offers a retry. Faster runs replace your
-  previous best. A minimap shows the circuit, your car, and the next checkpoint.
+  your five latest local times, shows your friends' best times, and offers a
+  retry. Faster runs replace your previous best. The numbered minimap gates,
+  glowing next-checkpoint gate, and HUD show the required route; cross every
+  gate in order before the checkered finish line.
 - **Freeplay:** practice drifting without a timer.
 - **Garage:** choose each car's body color, paint pattern, wing, and drift-wheel
   finish. Wheel compounds display their grip ratings and change handling from
@@ -36,20 +38,25 @@ Then visit `http://localhost:8000/dwifft.html`.
 - **Profiles:** sign in with email to sync XP, scores, run totals, and playtime
   through Supabase. Your selected car, per-car garage setups, best and recent
   Time Attack times, selected track, and sound setting sync to your profile.
-  Choose a car badge as your profile picture.
+  Your current customized car appears as your profile picture. The profile with
+  friend code
+  `CAYBZ#F66865D2F18B` has a glowing developer banner and tag.
 - **Friends:** share your friend code, send/accept requests, and compare
-  personal-best Time Attack records on every circuit. Friend races are
-  asynchronous: each player drives the same track and compares their best
-  recorded time.
+  personal-best Time Attack records on every circuit from the finish screen.
+- **Following:** open a player from the Friends list or global leaderboard to
+  view their profile and follow or unfollow them. Profiles show follower and
+  following counts; following is one-way and does not replace mutual Friends.
 - **Leaderboards:** browse the global top ten on each Time Attack track,
-  including driver avatar and name, record time, car, and saved garage build.
+  including the driver's current car portrait and name, record time, car, and
+  saved garage build.
   Sign in to submit your best time.
 
 ### Configure player profiles
 
 1. Create a Supabase project and run [`supabase/schema.sql`](./supabase/schema.sql)
    in its SQL Editor. Re-run it after pulling updates that add profile, save,
-   friends, or leaderboard features; it is written to be re-applied safely.
+   friends, following, or leaderboard features; it is written to be re-applied
+   safely.
 2. Put the project URL and the browser-safe anon/publishable key in
    [`js/supabase-config.js`](./js/supabase-config.js).
 3. Enable email/password authentication in the Supabase project. For local
@@ -60,8 +67,8 @@ service-role key in the game. Profile and run rows are protected with
 row-level security. Stats sync when a run ends or the player returns to the
 menu, and periodically during active runs; saved progress updates XP and
 playtime. Friend requests use the unique friend code shown in the Profile
-window. Friend Time Attack saves each signed-in player's best time per track
-and only reveals times to accepted friends.
+window. Time Attack saves each signed-in player's best time per track and
+shows it alongside accepted friends' best times after each run.
 
 ## Project files
 

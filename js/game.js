@@ -248,7 +248,9 @@
 
   let menuMode = 'main';
   let mode = 'race', state = 'menu', sel = 0, t = 0, lapT = 0, lap = 1, cp = 1, count = 0, drift = 0, msgT = 0, acc = 0;
-  let runId = null, runRecorded = false, raceChallenge = false, friendTimesRequest = 0, profileSyncElapsed = 0;
+  let runId = null, runRecorded = false, resultFriendsRequest = 0, profileSyncElapsed = 0;
+  let finishLineSide = 0, checkpointHintCooldown = 0, checkpointMissedNotice = 0;
+  let checkpointClearNotice = 0, checkpointClearIndex = 0, checkpointFlash = 0, checkpointFlashPoint = null;
   let shake = 0, mult = 1, zoom = 1.3, steerVis = 0, brakeVis = false;
   const cam = { x: 0, y: 0 };
 
@@ -259,10 +261,14 @@
   const parts = [];
   let wasHandbrake = false, lastCountdown = 0;
   const el = { tl: $('tl'), tr: $('tr'), bl: $('bl'), br: $('br'), msg: $('msg') };
+  const checkpointHud = $('checkpoint-hud');
+  const checkpointProgress = $('checkpoint-progress');
+  const checkpointInstructions = $('checkpoint-instructions');
   const minimap = $('minimap'), mapCtx = minimap.getContext('2d');
   const menuItemsEl = $('menu-items');
   const preview = $('car-preview'), pctx = preview.getContext('2d');
   const raceResult = $('race-result');
+  const raceResultFriends = $('race-result-friends');
   const leaderboardView = $('leaderboard-view');
   const leaderboardTabs = $('leaderboard-tabs');
   const leaderboardRows = $('leaderboard-rows');
@@ -297,6 +303,8 @@
       row.append(label, result);
       list.append(row);
     });
+    resultFriendsRequest++;
+    raceResultFriends.replaceChildren();
     raceResult.hidden = false;
     raceResult.setAttribute('aria-hidden', 'false');
     $('race-result-retry').focus();
@@ -312,10 +320,6 @@
   function getMenuItems() {
     if (menuMode === 'main') return [
       { label: 'TIME ATTACK', action: () => { menuMode = 'tracks'; sel = 0; } },
-      { label: 'FRIEND TIME ATTACK', action: () => {
-        if (!Profile.isSignedIn()) { Profile.open(); return; }
-        menuMode = 'friend-tracks'; sel = 0;
-      } },
       { label: 'LEADERBOARDS', action: () => { menuMode = 'leaderboard'; leaderboardTrack = trackId; sel = 0; } },
       { label: 'FREEPLAY', action: () => start('free') },
       { label: 'GARAGE', action: () => { menuMode = 'garage'; sel = 0; } },
@@ -323,11 +327,7 @@
     ];
     if (menuMode === 'tracks') return TRACKS.map(tr => ({
       label: tr.name,
-      action: () => { trackId = tr.id; TR = TRACK_MAP[tr.id]; LAPS = tr.laps; markGameSaveChanged(); start('race', false); }
-    })).concat([{ label: '‹ BACK', action: () => { menuMode = 'main'; sel = 0; } }]);
-    if (menuMode === 'friend-tracks') return TRACKS.map(tr => ({
-      label: tr.name,
-      action: () => { trackId = tr.id; TR = TRACK_MAP[tr.id]; LAPS = tr.laps; markGameSaveChanged(); start('race', true); }
+      action: () => { trackId = tr.id; TR = TRACK_MAP[tr.id]; LAPS = tr.laps; markGameSaveChanged(); start('race'); }
     })).concat([{ label: '‹ BACK', action: () => { menuMode = 'main'; sel = 0; } }]);
     if (menuMode === 'cars') return CARS.map((c, i) => ({
       label: `<i class="dot" style="background:${c.spec.color}"></i>${c.name}${i === carIdx ? ' ✓' : ''}`,
@@ -392,10 +392,9 @@
     }
   }
 
-  function start(m, challenge = raceChallenge) {
+  function start(m) {
     mode = m; skn = skc = 0; pv[0].ok = pv[1].ok = false; parts.length = 0; drift = 0; msgT = 0; acc = 0;
     hideRaceResult();
-    raceChallenge = m === 'race' && challenge;
     runId = crypto.randomUUID(); runRecorded = false; profileSyncElapsed = 0;
     wasHandbrake = false; lastCountdown = 0;
     shake = 0; mult = 1; steerVis = 0; brakeVis = false;
@@ -403,12 +402,45 @@
       const s = TR.start;
       car.reset(s.x, s.y, s.a);
       state = 'count'; count = 3.99; t = lapT = 0; lap = 1; cp = 1;
+      finishLineSide = getFinishLineSide();
+      checkpointHintCooldown = 3;
+      checkpointMissedNotice = 0;
+      checkpointClearNotice = 0;
+      checkpointFlash = 0;
+      checkpointFlashPoint = null;
+      checkpointHud.hidden = false;
+      checkpointHud.classList.remove('missed');
+      checkpointHud.classList.remove('cleared');
     } else {
       car.reset(0, 0, -Math.PI / 2);
       state = 'play'; t = lapT = 0;
+      checkpointHud.hidden = true;
     }
     cam.x = car.x; cam.y = car.y;
     stage.className = m === 'race' ? 'race' : '';
+  }
+
+  function getFinishLineSide() {
+    const finish = TR.cps[0];
+    return (car.x - finish[0]) * Math.cos(TR.start.a)
+      + (car.y - finish[1]) * Math.sin(TR.start.a);
+  }
+
+  function updateCheckpointHud() {
+    if (mode !== 'race') return;
+    const total = TR.cps.length - 1;
+    if (checkpointClearNotice > 0) {
+      checkpointProgress.textContent = `CHECKPOINT ${String(checkpointClearIndex).padStart(2, '0')} CLEARED`;
+      checkpointInstructions.textContent = cp === TR.cps.length
+        ? 'ALL GATES PASSED · HEAD TO THE FINISH'
+        : `NEXT: CHECKPOINT ${String(cp).padStart(2, '0')} · FOLLOW THE MAP`;
+    } else if (cp === TR.cps.length) {
+      checkpointProgress.textContent = 'ALL CHECKPOINTS CLEARED · FINISH';
+      checkpointInstructions.textContent = 'CROSS THE CHECKERED FINISH LINE TO RECORD YOUR TIME';
+    } else {
+      checkpointProgress.textContent = `CHECKPOINT ${String(cp).padStart(2, '0')} / ${total}`;
+      checkpointInstructions.textContent = 'FOLLOW NUMBERED MAP GATES IN ORDER — THEN CROSS THE FINISH';
+    }
   }
 
   function lapDone() {
@@ -428,12 +460,76 @@
       if (isNewBest) b.total = t;
       best[trackId] = b;
       save();
-      Profile.recordTimeAttack(trackId, t * 1000, CARS[carIdx].id, garageChoices(CARS[carIdx].id));
+      checkpointHud.hidden = true;
       showRaceResult(t, previousBest, b.total, isNewBest);
+      if (!Profile.isSignedIn()) {
+        setRaceFriendsMessage('SIGN IN TO SEE YOUR FRIENDS’ TIMES.');
+      } else {
+        const request = ++resultFriendsRequest;
+        const renderFriends = (times, saveSucceeded) => {
+          if (request !== resultFriendsRequest || raceResult.hidden) return;
+          raceResultFriends.replaceChildren();
+          if (saveSucceeded === false) {
+            const notice = document.createElement('li');
+            notice.className = 'message error';
+            notice.textContent = 'YOUR TIME COULD NOT BE SAVED. SHOWING SAVED TIMES.';
+            raceResultFriends.append(notice);
+          }
+          if (!times?.length) {
+            const empty = document.createElement('li');
+            empty.className = 'message';
+            empty.textContent = 'NO FRIEND TIMES YET. ADD FRIENDS FROM YOUR PROFILE.';
+            raceResultFriends.append(empty);
+            return;
+          }
+          for (const [index, time] of times.entries()) {
+            const row = document.createElement('li');
+            const name = document.createElement('span');
+            name.append(document.createTextNode(`${String(index + 1).padStart(2, '0')} · `));
+            const avatar = document.createElement('span');
+            avatar.className = 'profile-avatar result-avatar';
+            Profile.renderCarAvatar(avatar, time.car_id, time.car_setup, time.avatar);
+            const profileLink = document.createElement('button');
+            profileLink.type = 'button';
+            profileLink.className = 'profile-name-link';
+            profileLink.textContent = time.is_self ? 'YOU' : time.display_name;
+            profileLink.addEventListener('click', () => Profile.viewPublicProfile(time.player_id));
+            name.append(profileLink);
+            if (Profile.isDevProfile(time)) {
+              const badge = document.createElement('span');
+              badge.className = 'dev-badge';
+              badge.textContent = 'DEV';
+              name.append(badge);
+            }
+            const result = document.createElement('strong');
+            result.textContent = fmt(time.time_ms / 1000);
+            name.prepend(avatar);
+            row.append(name, result);
+            raceResultFriends.append(row);
+          }
+        };
+        raceResultFriends.replaceChildren(Object.assign(document.createElement('li'), {
+          className: 'message', textContent: 'LOADING FRIEND TIMES…'
+        }));
+        Profile.recordTimeAttack(trackId, t * 1000, CARS[carIdx].id, garageChoices(CARS[carIdx].id))
+          .then(saveSucceeded => Profile.getFriendTimes(trackId)
+            .then(times => renderFriends(times, saveSucceeded)))
+          .catch(error => {
+            if (request !== resultFriendsRequest || raceResult.hidden) return;
+            setRaceFriendsMessage(`FRIEND TIMES UNAVAILABLE: ${error.message}`, true);
+          });
+      }
     } else {
       save(); lap++;
       say(`${fmt(lt)}<small>${rec || 'LAP ' + (lap - 1) + ' DONE'}</small>`, 1.8);
     }
+  }
+
+  function setRaceFriendsMessage(message, isError = false) {
+    const item = document.createElement('li');
+    item.className = `message${isError ? ' error' : ''}`;
+    item.textContent = message;
+    raceResultFriends.replaceChildren(item);
   }
 
   function addSmoke(x, y, vx, vy, life, kind) {
@@ -444,6 +540,7 @@
   function sim(inp) {
     const i = state === 'play' ? inp : ZERO;
     const wasOn = car.on;
+    const previousFinishLineSide = finishLineSide;
     car.step(i, H, mode === 'race' ? TR.on(car.x, car.y) : true);
     const sp = car.speed, c = Math.cos(car.a), s = Math.sin(car.a);
 
@@ -458,9 +555,33 @@
       }
 
       if (mode === 'race') {
+        checkpointHintCooldown = Math.max(0, checkpointHintCooldown - H);
+        finishLineSide = getFinishLineSide();
+        const allCheckpointsCleared = cp === TR.cps.length;
         const g = TR.cps[cp % TR.cps.length];
         if (Math.hypot(car.x - g[0], car.y - g[1]) < 52) {
-          if (cp === TR.cps.length) { cp = 1; lapDone(); } else cp++;
+          if (allCheckpointsCleared) {
+            cp = 1;
+            lapDone();
+          } else {
+            checkpointClearIndex = cp;
+            checkpointClearNotice = .9;
+            checkpointFlashPoint = [g[0], g[1]];
+            checkpointFlash = .65;
+            checkpointHud.classList.remove('cleared');
+            void checkpointHud.offsetWidth;
+            checkpointHud.classList.add('cleared');
+            cp++;
+            if (cp === TR.cps.length) say('ALL CHECKPOINTS<small>HEAD TO THE FINISH</small>', 1.8);
+          }
+        }
+        if (!allCheckpointsCleared && checkpointHintCooldown === 0
+          && previousFinishLineSide < 0 && finishLineSide >= 0) {
+          checkpointHintCooldown = 4;
+          checkpointMissedNotice = 3.5;
+          checkpointHud.classList.add('missed');
+          el.msg.classList.add('checkpoint-warning');
+          say('CHECKPOINT MISSED<small>RETURN TO THE GLOWING GATE</small>', 3.5);
         }
       }
     }
@@ -545,9 +666,33 @@
       mapCtx.stroke();
       mapCtx.setLineDash([]);
 
-      const target = TR.cps[cp % TR.cps.length];
-      mapCtx.fillStyle = '#d86a58';
-      mapCtx.beginPath(); mapCtx.arc(target[0], target[1], 9, 0, Math.PI * 2); mapCtx.fill();
+      const targetIndex = cp % TR.cps.length;
+      const fontSize = 8 / scale;
+      mapCtx.font = `bold ${fontSize}px "Courier New", monospace`;
+      mapCtx.textAlign = 'center';
+      mapCtx.textBaseline = 'middle';
+      for (let index = 0; index < TR.cps.length; index++) {
+        const point = TR.cps[index];
+        const active = index === targetIndex;
+        const radius = active ? 6 : 4;
+        mapCtx.fillStyle = active ? '#a9814d' : '#161713';
+        mapCtx.strokeStyle = active ? '#c8a875' : '#8d8065';
+        mapCtx.lineWidth = (active ? 1.4 : 0.8) / scale;
+        mapCtx.beginPath(); mapCtx.arc(point[0], point[1], radius, 0, Math.PI * 2);
+        mapCtx.fill(); mapCtx.stroke();
+        mapCtx.fillStyle = active ? '#17140e' : '#e6d9b5';
+        mapCtx.fillText(index === 0 ? 'F' : String(index), point[0], point[1]);
+      }
+      if (checkpointFlash > 0 && checkpointFlashPoint) {
+        const progress = 1 - checkpointFlash / .65;
+        mapCtx.globalAlpha = Math.max(0, 1 - progress);
+        mapCtx.strokeStyle = '#d7bd8c';
+        mapCtx.lineWidth = 1.5 / scale;
+        mapCtx.beginPath();
+        mapCtx.arc(checkpointFlashPoint[0], checkpointFlashPoint[1], 6 + progress * 13, 0, Math.PI * 2);
+        mapCtx.stroke();
+        mapCtx.globalAlpha = 1;
+      }
       mapCtx.fillStyle = '#efb35c';
       mapCtx.beginPath(); mapCtx.arc(car.x, car.y, 8, 0, Math.PI * 2); mapCtx.fill();
       mapCtx.strokeStyle = '#e6d9b5';
@@ -556,7 +701,59 @@
       mapCtx.restore();
       return;
     }
+
     mapCtx.clearRect(0, 0, minimap.width, minimap.height);
+  }
+
+  function drawCheckpointBeacon() {
+    if (mode !== 'race' || state === 'menu' || state === 'done' || cp === TR.cps.length) return;
+    const index = cp % TR.cps.length;
+    const point = TR.cps[index];
+    const previous = TR.cps[(index + TR.cps.length - 1) % TR.cps.length];
+    const next = TR.cps[(index + 1) % TR.cps.length];
+    const dx = next[0] - previous[0], dy = next[1] - previous[1];
+    const length = Math.hypot(dx, dy) || 1;
+    const halfWidth = TR.meta.opts.HW + 4;
+    const nx = -dy / length * halfWidth, ny = dx / length * halfWidth;
+    const k = Math.min(cvEl.width / 320, cvEl.height / 180) * zoom;
+    ctx.save();
+    ctx.lineCap = 'round';
+    const pulse = .72 + Math.sin(performance.now() / 360) * .1;
+    ctx.strokeStyle = `rgba(218,175,111,${pulse})`;
+    ctx.lineWidth = 2 / k;
+    ctx.shadowColor = '#b98a53';
+    ctx.shadowBlur = 6 / k;
+    ctx.beginPath();
+    ctx.moveTo(point[0] - nx, point[1] - ny);
+    ctx.lineTo(point[0] + nx, point[1] + ny);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+    const labelX = point[0] + dx / length * 30;
+    const labelY = point[1] + dy / length * 30;
+    const labelWidth = 38 / k, labelHeight = 13 / k;
+    ctx.fillStyle = 'rgba(9,10,8,.76)';
+    ctx.fillRect(labelX - labelWidth / 2, labelY - labelHeight / 2, labelWidth, labelHeight);
+    ctx.strokeStyle = 'rgba(200,165,111,.72)';
+    ctx.lineWidth = .8 / k;
+    ctx.strokeRect(labelX - labelWidth / 2, labelY - labelHeight / 2, labelWidth, labelHeight);
+    ctx.fillStyle = '#d9c8a5';
+    ctx.font = `bold ${8 / k}px "Courier New", monospace`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(String(index).padStart(2, '0'), labelX, labelY);
+    ctx.restore();
+
+    if (checkpointFlash > 0 && checkpointFlashPoint) {
+      const progress = 1 - checkpointFlash / .65;
+      ctx.save();
+      ctx.globalAlpha = Math.max(0, 1 - progress);
+      ctx.strokeStyle = '#d7bd8c';
+      ctx.lineWidth = 2 / k;
+      ctx.beginPath();
+      ctx.arc(checkpointFlashPoint[0], checkpointFlashPoint[1], 5 + progress * 24, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
   }
 
   function draw() {
@@ -594,7 +791,10 @@
       }
     }
 
-    if (mode === 'race') TR.drawProps(ctx, v);
+    if (mode === 'race') {
+      TR.drawProps(ctx, v);
+      drawCheckpointBeacon();
+    }
 
     // smoke sits under the car, sparks over it
     for (const p of parts) if (p.kind < 2) {
@@ -623,7 +823,8 @@
   function hud(dt) {
     const b = getBest(trackId);
     if (mode === 'race') {
-      el.tl.innerHTML = `<span class="lbl">${raceChallenge ? 'FRIEND TIME ATTACK · ' : ''}${TR.meta.name} · LAP ${lap}/${LAPS}</span><span class="val big">${fmt(t)}</span>`;
+      el.tl.innerHTML = `<span class="lbl">${TR.meta.name} · LAP ${lap}/${LAPS}</span><span class="val big">${fmt(t)}</span>`;
+      el.tl.append(checkpointHud);
       el.tr.innerHTML = `<span class="lbl">BEST</span><span class="val">${b.total ? fmt(b.total) : '--'}</span><span class="lbl">FASTEST LAP</span><span class="val">${b.lap ? fmt(b.lap) : '--'}</span>`;
     } else {
       el.tl.innerHTML = `<span class="lbl">FREEPLAY</span><span class="val big">${CARS[carIdx].name}</span>`;
@@ -634,6 +835,15 @@
 
     msgT -= dt;
     el.msg.style.display = msgT > 0 ? 'block' : 'none';
+    if (msgT <= 0) el.msg.classList.remove('checkpoint-warning');
+    if (mode === 'race') {
+      updateCheckpointHud();
+      checkpointMissedNotice = Math.max(0, checkpointMissedNotice - dt);
+      if (checkpointMissedNotice === 0) checkpointHud.classList.remove('missed');
+      checkpointClearNotice = Math.max(0, checkpointClearNotice - dt);
+      checkpointFlash = Math.max(0, checkpointFlash - dt);
+      if (checkpointClearNotice === 0) checkpointHud.classList.remove('cleared');
+    }
   }
 
   let lastSig = '';
@@ -681,16 +891,6 @@
             lastSig = '';
             paint();
           });
-          tab.addEventListener('keydown', event => {
-            if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
-            event.preventDefault();
-            const direction = event.key === 'ArrowRight' ? 1 : -1;
-            const current = TRACKS.findIndex(item => item.id === leaderboardTrack);
-            leaderboardTrack = TRACKS[(current + direction + TRACKS.length) % TRACKS.length].id;
-            lastSig = '';
-            paint();
-            leaderboardTabs.querySelector('[aria-selected="true"]')?.focus();
-          });
           leaderboardTabs.append(tab);
         }
         leaderboardRows.replaceChildren();
@@ -709,7 +909,6 @@
             return;
           }
           const carNames = Object.fromEntries(CARS.map(car => [car.id, car.name]));
-          const avatarNames = { skyline: 'R34', supra: 'A80', porsche: '911', rx7: 'FD', silvia: 'S15', ae86: '86' };
           for (const [index, entry] of entries.entries()) {
             const row = document.createElement('article');
             row.className = 'leaderboard-row';
@@ -718,12 +917,22 @@
             rank.textContent = String(index + 1).padStart(2, '0');
             const avatar = document.createElement('span');
             avatar.className = 'profile-avatar leaderboard-avatar';
-            avatar.textContent = avatarNames[entry.avatar] || 'ND';
+            Profile.renderCarAvatar(avatar, entry.profile_car_id, entry.profile_car_setup, entry.avatar);
             const identity = document.createElement('span');
             identity.className = 'leaderboard-identity';
-            const name = document.createElement('strong');
+            const name = document.createElement('button');
+            name.type = 'button';
+            name.className = 'profile-name-link leaderboard-name';
             name.textContent = entry.display_name;
+            name.setAttribute('aria-label', `View ${entry.display_name}'s profile`);
+            name.addEventListener('click', () => Profile.viewPublicProfile(entry.player_id));
             identity.append(name);
+            if (Profile.isDevProfile(entry)) {
+              const badge = document.createElement('span');
+              badge.className = 'dev-badge';
+              badge.textContent = 'DEV';
+              identity.append(badge);
+            }
             const vehicle = document.createElement('span');
             vehicle.className = 'leaderboard-vehicle';
             const vehicleName = carNames[entry.car_id] || 'CAR NOT RECORDED';
@@ -757,67 +966,25 @@
       const b = getBest(trackId);
       if (showingLeaderboard) {
         $('best').textContent = '';
-        $('friend-times').replaceChildren();
       } else if (menuMode === 'main') {
         const raceRecord = b.total ? 'BEST ' + TRACKS.find(t => t.id === trackId).name + ' ' + fmt(b.total) : '';
         $('best').textContent = raceRecord;
-      } else if (menuMode === 'tracks' || menuMode === 'friend-tracks') {
+      } else if (menuMode === 'tracks') {
         const tr = TRACKS[Math.min(sel, TRACKS.length - 1)];
         const bb = tr ? getBest(tr.id) : {};
-        $('best').textContent = menuMode === 'friend-tracks'
-          ? 'FRIEND TIME ATTACK · BEST TIMES'
-          : bb.total ? 'RECORD ' + fmt(bb.total) : (tr ? 'NO RECORD YET' : '');
-        const request = ++friendTimesRequest;
-        const timesElement = $('friend-times');
-        timesElement.replaceChildren();
-        if (menuMode === 'friend-tracks' && tr) {
-          const loading = document.createElement('p');
-          loading.className = 'friend-empty'; loading.textContent = 'LOADING FRIEND TIMES…';
-          timesElement.append(loading);
-          Profile.getFriendTimes(tr.id).then(times => {
-            if (request !== friendTimesRequest || menuMode !== 'friend-tracks') return;
-            timesElement.replaceChildren();
-            if (!times?.length) {
-              const empty = document.createElement('p');
-              empty.className = 'friend-empty'; empty.textContent = 'NO TIMES POSTED YET. SET THE FIRST RECORD!';
-              timesElement.append(empty);
-              return;
-            }
-            for (const [index, time] of times.entries()) {
-              const row = document.createElement('div');
-              row.className = 'friend-time-row';
-              const name = document.createElement('span');
-              name.textContent = `${index + 1}. ${time.is_self ? 'YOU' : time.display_name}`;
-              const result = document.createElement('strong');
-              result.textContent = fmt(time.time_ms / 1000);
-              row.append(name, result);
-              timesElement.append(row);
-            }
-          }).catch(error => {
-            if (request !== friendTimesRequest || menuMode !== 'friend-tracks') return;
-            const failed = document.createElement('p');
-            failed.className = 'friend-empty'; failed.textContent = `FRIEND TIMES UNAVAILABLE: ${error.message}`;
-            timesElement.replaceChildren(failed);
-          });
-        }
+        $('best').textContent = bb.total ? 'RECORD ' + fmt(bb.total) : (tr ? 'NO RECORD YET' : '');
       } else if (menuMode === 'cars' && sel < CARS.length) {
         $('best').textContent = CARS[sel].stats;
       } else if (menuMode === 'garage') {
         $('best').textContent = 'SETUP SAVES PER CAR';
       } else {
         $('best').textContent = '';
-        $('friend-times').replaceChildren();
-      }
-      if (menuMode !== 'friend-tracks' && menuMode !== 'tracks') {
-        friendTimesRequest++;
-        $('friend-times').replaceChildren();
       }
     }
     $('menu-section-title').textContent =
       menuMode === 'settings' ? 'SETTINGS'
         : menuMode === 'garage' ? 'CUSTOMIZE YOUR CAR'
-          : menuMode === 'friend-tracks' ? 'FRIEND TIME ATTACK'
-            : menuMode === 'leaderboard' ? 'GLOBAL LEADERBOARD'
+          : menuMode === 'leaderboard' ? 'GLOBAL LEADERBOARD'
             : menuMode === 'garage-option' ? `CHOOSE ${garageCategory === 'color' ? 'BODY COLOR' : garageCategory === 'paint' ? 'PAINT STYLE' : garageCategory.toUpperCase()}`
             : menuMode === 'cars' ? 'SELECT YOUR CAR' : 'SELECT YOUR RUN';
     $('menu').classList.toggle('sub', menuMode !== 'main');
@@ -835,14 +1002,24 @@
     const dt = Math.min(.05, (now - last) / 1000); last = now;
     const inp = Input.poll(dt), q = inp.p;
 
-    if (state === 'menu') {
+    if (Profile.dialogOpen()) {
+      Profile.handleController(q);
+    } else if (!raceResult.hidden) {
+      if (q.menu) $('race-result-menu').click();
+      else Input.navigate(raceResult.querySelector('.race-result-dialog'), q);
+    } else if (state === 'menu' && menuMode === 'leaderboard') {
+      if (q.menu) {
+        SFX.move();
+        backToParentMenu();
+        lastSig = '';
+      } else Input.navigate(leaderboardView, q);
+      paint();
+    } else if (state === 'menu') {
       const items = getMenuItems();
-      if (!Profile.dialogOpen()) {
-        if (q.up) { SFX.move(); sel = (sel - 1 + items.length) % items.length; }
-        if (q.down) { SFX.move(); sel = (sel + 1) % items.length; }
-        if (q.ok) { SFX.unlock(); SFX.select(); items[sel].action(); lastSig = ''; }
-        if (q.menu && menuMode !== 'main') { SFX.move(); backToParentMenu(); lastSig = ''; }
-      }
+      if (q.up) { SFX.move(); sel = (sel - 1 + items.length) % items.length; }
+      if (q.down) { SFX.move(); sel = (sel + 1) % items.length; }
+      if (q.ok) { SFX.unlock(); SFX.select(); items[sel].action(); lastSig = ''; }
+      if (q.menu && menuMode !== 'main') { SFX.move(); backToParentMenu(); lastSig = ''; }
       paint();
     } else if (q.menu) {
       recordProfileRun(Math.floor(drift), mode === 'free');
@@ -899,6 +1076,7 @@
       throttle: state === 'play' ? inp.throttle : 0,
       slip: car.slip,
       hand: state === 'play' ? inp.hand : 0,
+      carId: CARS[carIdx].id,
       active: state === 'play'
     });
     requestAnimationFrame(frame);
@@ -906,7 +1084,7 @@
   window.focus();
   $('race-result-retry').addEventListener('click', () => {
     SFX.select();
-    start('race', raceChallenge);
+    start('race');
   });
   $('race-result-menu').addEventListener('click', () => {
     SFX.select();
@@ -922,6 +1100,10 @@
     getLocalSave: (userId, hasRemote, accountSave) => accountSave || ({
       data: getGameSaveData(),
       updatedAt: hasRemote ? 0 : gameSaveUpdatedAt
+    }),
+    getProfileCarData: () => ({
+      carId: CARS[carIdx].id,
+      setup: garageChoices(CARS[carIdx].id)
     }),
     applyRemoteSave: applyRemoteGameSave,
     setSaveTimestamp: setGameSaveTimestamp

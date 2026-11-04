@@ -5,13 +5,17 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#090a08">
 <title>NightDwift</title>
-<link rel="stylesheet" href="styles.css?v=leaderboard-1">
+<link rel="stylesheet" href="styles.css?v=checkpoints-2">
 </head>
 <body>
 <div id="stage" class="menu">
   <canvas id="c"></canvas>
   <div id="hud">
     <div id="tl"></div><div id="tr"></div><div id="bl"></div><div id="br"></div><div id="msg"></div>
+    <div id="checkpoint-hud" hidden aria-live="polite">
+      <strong id="checkpoint-progress"></strong>
+      <span id="checkpoint-instructions"></span>
+    </div>
     <canvas id="minimap" width="240" height="160" aria-label="Game minimap"></canvas>
   </div>
   <div id="menu">
@@ -30,7 +34,6 @@
           <button id="leaderboard-back" class="leaderboard-back" type="button">‹ BACK TO MENU</button>
         </section>
         <p id="best"></p>
-        <div id="friend-times" class="friend-times" aria-live="polite"></div>
       </section>
       <section class="garage-panel" aria-label="Featured car">
         <p class="section-label"><span id="garage-section-title">TONIGHT'S MACHINE</span><span>NO. 01</span></p>
@@ -75,6 +78,10 @@
       <h3>RECENT TIMES</h3>
       <ol id="race-result-recent"></ol>
     </section>
+    <section class="race-friends-section" aria-label="Friends' best times">
+      <h3>FRIENDS' BEST TIMES</h3>
+      <ol id="race-result-friends" aria-live="polite"></ol>
+    </section>
     <div class="race-result-actions">
       <button id="race-result-retry" type="button">TRY AGAIN</button>
       <button id="race-result-menu" type="button">RETURN TO MENU</button>
@@ -107,11 +114,20 @@
         </div>
       </div>
       <div id="profile-account" hidden>
+        <div id="profile-dev-banner" class="profile-dev-banner" hidden>
+          <span class="profile-dev-banner-mark">ND</span>
+          <span><strong>NIGHTDWIFT DEVELOPER</strong><small>BUILT AFTER HOURS</small></span>
+          <span class="dev-badge">DEV</span>
+        </div>
         <div class="profile-identity">
           <span id="profile-account-avatar" class="profile-avatar large">ND</span>
-          <div><h2 id="profile-account-name"></h2><span id="profile-account-email"></span></div>
+          <div><div class="profile-name-row"><h2 id="profile-account-name"></h2><span id="profile-dev-tag" class="dev-badge" hidden>DEV</span></div><span id="profile-account-email"></span></div>
         </div>
         <div id="profile-stats" class="profile-stats"></div>
+        <section class="follow-counts" aria-label="Follow counts">
+          <div class="follow-count"><strong id="profile-followers-count">0</strong><span>FOLLOWERS</span></div>
+          <div class="follow-count"><strong id="profile-following-count">0</strong><span>FOLLOWING</span></div>
+        </section>
         <p class="player-tag-label">YOUR FRIEND CODE</p>
         <strong id="profile-player-tag" class="player-tag"></strong>
         <section class="friends-section" aria-label="Friends">
@@ -124,27 +140,41 @@
           <h3>FRIENDS & REQUESTS</h3>
           <div id="friend-list" class="friend-list"></div>
         </section>
-        <div id="profile-avatar-editor" hidden>
-          <p class="avatar-label">CHOOSE YOUR PROFILE PICTURE</p>
-          <div id="profile-avatars" class="profile-avatars"></div>
-          <button id="profile-avatar-save" class="profile-action" type="button">SAVE AVATAR</button>
-        </div>
-        <button id="profile-avatar-edit" class="profile-secondary" type="button">CHANGE PROFILE PICTURE</button>
+        <p class="car-avatar-note">PROFILE PICTURE · YOUR CURRENT CAR</p>
         <button id="profile-signout" class="profile-secondary" type="button">SIGN OUT</button>
+      </div>
+      <div id="profile-public" hidden>
+        <div id="public-profile-dev-banner" class="profile-dev-banner" hidden>
+          <span class="profile-dev-banner-mark">ND</span>
+          <span><strong>NIGHTDWIFT DEVELOPER</strong><small>BUILT AFTER HOURS</small></span>
+          <span class="dev-badge">DEV</span>
+        </div>
+        <div class="profile-identity">
+          <span id="public-profile-avatar" class="profile-avatar large">ND</span>
+          <div class="profile-name-row">
+            <h2 id="public-profile-name"></h2>
+            <span id="public-profile-dev-tag" class="dev-badge" hidden>DEV</span>
+          </div>
+        </div>
+        <section class="follow-counts" aria-label="Follow counts">
+          <div class="follow-count"><strong id="public-profile-followers">0</strong><span>FOLLOWERS</span></div>
+          <div class="follow-count"><strong id="public-profile-following">0</strong><span>FOLLOWING</span></div>
+        </section>
+        <button id="public-profile-follow" class="profile-action" type="button">FOLLOW</button>
       </div>
     </form>
     <p id="profile-status" class="profile-status" role="status" aria-live="polite"></p>
   </section>
 </div>
 <script src="js/error-handler.js"></script>
-<script src="js/input.js"></script>
-<script src="js/sound.js"></script>
+<script src="js/input.js?v=car-avatars-1"></script>
+<script src="js/sound.js?v=rx7-engine-1"></script>
 <script src="js/cars.js?v=garage-2"></script>
 <script src="js/tracks.js?v=one-lap-2"></script>
 <script src="js/physics.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="js/supabase-config.js"></script>
-<script src="js/profile.js?v=leaderboard-1"></script>
-<script src="js/game.js?v=leaderboard-1"></script>
+<script src="js/profile.js?v=car-avatars-1"></script>
+<script src="js/game.js?v=checkpoints-2"></script>
 </body>
 </html>

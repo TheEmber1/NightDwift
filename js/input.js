@@ -26,6 +26,8 @@ const Input = (() => {
     const raw = {
       up: any('ArrowUp', 'KeyW') || b(12) > .5 || ly < -.6,
       down: any('ArrowDown', 'KeyS') || b(13) > .5 || ly > .6,
+      left: any('ArrowLeft') || b(14) > .5,
+      right: any('ArrowRight') || b(15) > .5,
       ok: any('Enter', 'NumpadEnter', 'Space') || b(0) > .5,
       reset: !!K.KeyR || b(3) > .5,
       menu: any('Escape', 'KeyP') || b(9) > .5
@@ -42,6 +44,61 @@ const Input = (() => {
     };
   }
 
+  function navigate(root, pressed) {
+    const controls = [...root.querySelectorAll('button:not(:disabled), input:not(:disabled), [tabindex="0"]')]
+      .filter(element => element.getClientRects().length && !element.closest('[hidden]'));
+    if (!controls.length) return;
+
+    const current = controls.indexOf(document.activeElement);
+    if (pressed.ok) {
+      const target = controls[current >= 0 ? current : 0];
+      target.focus();
+      if (target instanceof HTMLButtonElement) target.click();
+      return;
+    }
+
+    const direction = pressed.up ? 'up' : pressed.down ? 'down'
+      : pressed.left ? 'left' : pressed.right ? 'right' : null;
+    if (!direction) return;
+    if (current < 0) {
+      controls[0].focus();
+      return;
+    }
+
+    const origin = controls[current].getBoundingClientRect();
+    const ox = origin.left + origin.width / 2, oy = origin.top + origin.height / 2;
+    const candidates = controls.map((element, index) => {
+      if (index === current) return null;
+      const rect = element.getBoundingClientRect();
+      const dx = rect.left + rect.width / 2 - ox;
+      const dy = rect.top + rect.height / 2 - oy;
+      const primary = direction === 'up' ? -dy : direction === 'down' ? dy
+        : direction === 'left' ? -dx : dx;
+      if (primary <= 0) return null;
+      const secondary = direction === 'up' || direction === 'down' ? Math.abs(dx) : Math.abs(dy);
+      return { element, index, primary, secondary, score: primary + secondary * 2.5 };
+    }).filter(Boolean);
+
+    if (candidates.length) {
+      candidates.sort((a, b) => a.score - b.score);
+      const target = candidates[0].element;
+      target.focus();
+      if (target.getAttribute('role') === 'tab') target.click();
+      return;
+    }
+
+    const wrap = controls.map(element => {
+      const rect = element.getBoundingClientRect();
+      const x = rect.left + rect.width / 2, y = rect.top + rect.height / 2;
+      const primary = direction === 'up' ? y : direction === 'down' ? -y
+        : direction === 'left' ? x : -x;
+      const secondary = direction === 'up' || direction === 'down' ? Math.abs(x - ox) : Math.abs(y - oy);
+      return { element, score: primary + secondary * 2.5 };
+    }).sort((a, b) => a.score - b.score)[0].element;
+    wrap.focus();
+    if (wrap.getAttribute('role') === 'tab') wrap.click();
+  }
+
   function rumble(strong, weak) {
     if (!gp || !gp.vibrationActuator) return;
     const t = performance.now();
@@ -50,5 +107,5 @@ const Input = (() => {
     try { gp.vibrationActuator.playEffect('dual-rumble', { duration: 100, strongMagnitude: strong, weakMagnitude: weak }); } catch (e) {}
   }
 
-  return { poll, rumble, connected: () => !!gp };
+  return { poll, rumble, navigate, connected: () => !!gp };
 })();

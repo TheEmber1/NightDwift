@@ -11,6 +11,8 @@
     { id: 'ae86', label: '86' }
   ];
   let user = null, profile = null, busy = false, modalOpen = false, socialBusy = false;
+  let publicProfileRequest = 0, viewingProfileId = null, publicProfile = null;
+  let profileCarData = null;
   let lastRunSyncError = '';
   const runSyncs = new Map();
   let gameSaveHandler = null;
@@ -22,6 +24,11 @@
   const overlay = $('profile-overlay');
   const form = $('profile-form');
   const status = $('profile-status');
+  let returnFocus = null;
+  const DEV_PLAYER_TAG = 'CAYBZ#F66865D2F18B';
+  const isDevProfile = player =>
+    String(player?.player_tag || '').trim().toUpperCase() === DEV_PLAYER_TAG ||
+    player?.is_dev === true;
 
   const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
@@ -35,8 +42,10 @@
     form.querySelectorAll('button,input').forEach(element => { element.disabled = busy; });
   };
   const initial = () => {
+    overlay.querySelector('.profile-dialog').setAttribute('aria-labelledby', 'profile-auth-title');
     $('profile-auth').hidden = false;
     $('profile-account').hidden = true;
+    $('profile-public').hidden = true;
     $('profile-signup-fields').hidden = true;
     $('profile-auth-title').textContent = 'SIGN IN';
     $('profile-submit').textContent = 'SIGN IN';
@@ -44,15 +53,40 @@
     $('profile-switch').textContent = 'NEW HERE? CREATE AN ACCOUNT';
     $('profile-name').required = false;
   };
-  const renderAvatarPicker = selected => {
-    $('profile-avatars').innerHTML = avatars.map(avatar =>
-      `<button class="avatar-choice${avatar.id === selected ? ' selected' : ''}" type="button" data-avatar="${avatar.id}" aria-label="Choose ${avatar.label} avatar">${avatar.label}</button>`
-    ).join('');
-  };
   const formatTime = seconds => {
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor(seconds % 3600 / 60);
     return hours ? `${hours}H ${minutes}M` : `${minutes}M`;
+  };
+  const renderCarAvatar = (element, carId, savedSetup, fallbackAvatar) => {
+    const spec = typeof CAR_SPECS !== 'undefined' ? CAR_SPECS[carId] : null;
+    if (!spec || typeof drawCar !== 'function') {
+      element.classList.remove('car-profile-avatar');
+      element.replaceChildren();
+      element.textContent = avatars.find(item => item.id === fallbackAvatar)?.label || 'ND';
+      return;
+    }
+
+    const setup = savedSetup && typeof savedSetup === 'object' && !Array.isArray(savedSetup)
+      ? savedSetup : null;
+    const colorOptions = {
+      factory: null, blue: '#315b98', red: '#b74438', ivory: '#e5dcc3',
+      yellow: '#e2bd43', jade: '#508575', purple: '#815c85'
+    };
+    const custom = setup ? {
+      color: Object.hasOwn(colorOptions, setup.color) ? colorOptions[setup.color] : null,
+      paint: ['factory', 'stripes', 'two-tone', 'panda'].includes(setup.paint) ? setup.paint : 'factory',
+      wing: ['stock', 'gt', 'ducktail', 'none'].includes(setup.wing) ? setup.wing : 'stock',
+      wheels: ['steel', 'bronze', 'white', 'gunmetal', 'gold'].includes(setup.wheels) ? setup.wheels : 'steel'
+    } : null;
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = 80;
+    canvas.className = 'car-profile-avatar-image';
+    const context = canvas.getContext('2d');
+    context.setTransform(3.2, 0, 0, 3.2, 40, 40);
+    drawCar(context, spec, 0, 0, -Math.PI / 2, { shadow: false, custom });
+    element.classList.add('car-profile-avatar');
+    element.replaceChildren(canvas);
   };
   const showStats = async (includeFriends = true) => {
     if (!client || !user) return;
@@ -65,10 +99,29 @@
         return;
       }
       profile = data;
+      profileCarData = null;
+      const localCar = gameSaveHandler?.getProfileCarData?.();
+      if (localCar?.carId) profileCarData = localCar;
+      let profileMessage = lastRunSyncError;
+      let profileMessageIsError = Boolean(lastRunSyncError);
+      try {
+        const social = await getPublicProfile(user.id);
+        if (!profileCarData?.carId) {
+          profileCarData = { carId: social.car_id, setup: social.car_setup };
+        }
+        $('profile-followers-count').textContent = Number(social.follower_count).toLocaleString();
+        $('profile-following-count').textContent = Number(social.following_count).toLocaleString();
+      } catch (socialError) {
+        profileMessage = `FOLLOW COUNTS FAILED TO LOAD: ${socialError.message || 'Network error.'}`;
+        profileMessageIsError = true;
+      }
       $('profile-account-name').textContent = profile.display_name;
+      $('profile-dev-tag').hidden = !isDevProfile(profile);
+      $('profile-dev-banner').hidden = !isDevProfile(profile);
       $('profile-account-email').textContent = user.email || '';
       $('profile-player-tag').textContent = profile.player_tag;
-      $('profile-account-avatar').textContent = avatars.find(item => item.id === profile.avatar)?.label || 'ND';
+      renderCarAvatar($('profile-account-avatar'), profileCarData?.carId, profileCarData?.setup, profile.avatar);
+      renderCarAvatar($('profile-header-avatar'), profileCarData?.carId, profileCarData?.setup, profile.avatar);
       $('profile-stats').innerHTML = [
         ['XP', Number(profile.xp).toLocaleString()],
         ['TOTAL SCORE', Number(profile.total_score).toLocaleString()],
@@ -78,14 +131,16 @@
       ].map(([label, value]) => `<div class="profile-stat"><span>${label}</span><strong>${escapeHtml(value)}</strong></div>`).join('');
       $('profile-auth').hidden = true;
       $('profile-account').hidden = false;
-      $('profile-avatar-editor').hidden = true;
-      setStatus(lastRunSyncError, Boolean(lastRunSyncError));
+      $('profile-public').hidden = true;
+      overlay.querySelector('.profile-dialog').setAttribute('aria-labelledby', 'profile-account-name');
+      setStatus(profileMessage, profileMessageIsError);
       if (includeFriends) await refreshFriends();
     } catch (error) {
       setStatus(`PROFILE LOAD FAILED: ${error.message || 'Network error.'}`, true);
     }
   };
   const open = async () => {
+    if (overlay.hidden) returnFocus = document.activeElement;
     modalOpen = true;
     overlay.hidden = false;
     overlay.setAttribute('aria-hidden', 'false');
@@ -100,6 +155,7 @@
         : 'SUPABASE SDK DID NOT LOAD. CHECK YOUR CONNECTION, THEN RELOAD.');
       return;
     }
+    $('profile-public').hidden = true;
     $('profile-form-fields').hidden = false;
     $('profile-switch').hidden = false;
     $('profile-submit').hidden = false;
@@ -112,14 +168,31 @@
   };
   const close = () => {
     modalOpen = false;
+    publicProfileRequest++;
     overlay.hidden = true;
     overlay.setAttribute('aria-hidden', 'true');
     setStatus('');
+    if (returnFocus instanceof HTMLElement && returnFocus.isConnected) returnFocus.focus();
+    else $('profile-button').focus();
+    returnFocus = null;
+  };
+  const handleController = pressed => {
+    if (!modalOpen) return false;
+    if (pressed.menu) close();
+    else Input.navigate(overlay.querySelector('.profile-dialog'), pressed);
+    return true;
   };
   const refreshHeader = () => {
     const avatar = $('profile-header-avatar');
     const name = $('profile-header-label');
-    avatar.textContent = user && profile ? (avatars.find(item => item.id === profile.avatar)?.label || 'ND') : '?';
+    if (user && profile) renderCarAvatar(
+      avatar, profileCarData?.carId, profileCarData?.setup, profile.avatar
+    );
+    else {
+      avatar.classList.remove('car-profile-avatar');
+      avatar.replaceChildren();
+      avatar.textContent = '?';
+    }
     name.textContent = user && profile ? profile.display_name : 'PROFILE';
     $('profile-button').setAttribute('aria-label', user && profile ? `Profile: ${profile.display_name}` : 'Open profile and sign in');
   };
@@ -268,10 +341,20 @@
     row.className = 'friend-entry';
     const avatar = document.createElement('span');
     avatar.className = 'profile-avatar';
-    avatar.textContent = avatars.find(item => item.id === player.avatar)?.label || 'ND';
+    renderCarAvatar(avatar, player.car_id, player.car_setup, player.avatar);
     const nameBlock = document.createElement('div');
-    const name = document.createElement('strong');
+    const name = document.createElement('button');
+    name.type = 'button';
+    name.className = 'profile-name-link';
     name.textContent = player.display_name;
+    name.setAttribute('aria-label', `View ${player.display_name}'s profile`);
+    name.addEventListener('click', () => viewPublicProfile(player.player_id));
+    if (isDevProfile(player)) {
+      const badge = document.createElement('span');
+      badge.className = 'dev-badge';
+      badge.textContent = 'DEV';
+      name.append(badge);
+    }
     const tag = document.createElement('small');
     tag.textContent = player.player_tag || '';
     nameBlock.append(name, tag);
@@ -382,8 +465,91 @@
     await refreshFriends();
   };
   const getFriendTimes = async trackId => rpc('get_friend_times', { p_track_id: trackId });
+  const getPublicProfile = async playerId => {
+    if (!client) throw new Error('Profile service is unavailable.');
+    const { data, error } = await client.rpc('get_public_profile', { p_player_id: playerId });
+    if (error) throw error;
+    if (!data?.length) throw new Error('Player not found.');
+    return data[0];
+  };
+  const viewPublicProfile = async playerId => {
+    if (!client) { await open(); return; }
+    if (overlay.hidden) returnFocus = document.activeElement;
+    const request = ++publicProfileRequest;
+    viewingProfileId = playerId;
+    modalOpen = true;
+    overlay.hidden = false;
+    overlay.setAttribute('aria-hidden', 'false');
+    overlay.querySelector('.profile-dialog').setAttribute('aria-labelledby', 'public-profile-name');
+    $('profile-auth').hidden = true;
+    $('profile-account').hidden = true;
+    $('profile-public').hidden = false;
+    $('public-profile-name').textContent = 'LOADING PROFILE…';
+    $('public-profile-followers').textContent = '—';
+    $('public-profile-following').textContent = '—';
+    $('public-profile-follow').hidden = true;
+    setStatus('');
+    try {
+      const data = await getPublicProfile(playerId);
+      if (request !== publicProfileRequest) return;
+      publicProfile = data;
+      $('public-profile-name').textContent = data.display_name;
+      renderCarAvatar($('public-profile-avatar'), data.car_id, data.car_setup, data.avatar);
+      $('public-profile-dev-tag').hidden = !isDevProfile(data);
+      $('public-profile-dev-banner').hidden = !isDevProfile(data);
+      $('public-profile-followers').textContent = Number(data.follower_count).toLocaleString();
+      $('public-profile-following').textContent = Number(data.following_count).toLocaleString();
+      const followButton = $('public-profile-follow');
+      followButton.hidden = data.is_self;
+      followButton.textContent = !user ? 'SIGN IN TO FOLLOW'
+        : data.is_following ? 'UNFOLLOW' : 'FOLLOW';
+    } catch (error) {
+      if (request !== publicProfileRequest) return;
+      publicProfile = null;
+      $('public-profile-name').textContent = 'PROFILE UNAVAILABLE';
+      setStatus(`PROFILE FAILED TO LOAD: ${error.message || 'Network error.'}`, true);
+    }
+  };
+  const togglePublicFollow = async () => {
+    if (!viewingProfileId || socialBusy) return;
+    if (!user) {
+      $('profile-public').hidden = true;
+      initial();
+      $('profile-form-fields').hidden = false;
+      $('profile-switch').hidden = false;
+      $('profile-submit').hidden = false;
+      setStatus('SIGN IN TO FOLLOW THIS PLAYER.');
+      $('profile-email').focus();
+      return;
+    }
+    if (!publicProfile || publicProfile.is_self) return;
+    socialBusy = true;
+    $('public-profile-follow').disabled = true;
+    try {
+      await rpc(publicProfile.is_following ? 'unfollow_player' : 'follow_player', {
+        p_player_id: viewingProfileId
+      });
+    } catch (error) {
+      setStatus(`FOLLOW UPDATE FAILED: ${error.message || 'Network error.'}`, true);
+      socialBusy = false;
+      $('public-profile-follow').disabled = false;
+      return;
+    }
+    const followedProfileId = viewingProfileId;
+    await viewPublicProfile(followedProfileId);
+    try {
+      const own = await getPublicProfile(user.id);
+      $('profile-followers-count').textContent = Number(own.follower_count).toLocaleString();
+      $('profile-following-count').textContent = Number(own.following_count).toLocaleString();
+    } catch (error) {
+      setStatus(`FOLLOW UPDATED, BUT COUNTS FAILED TO REFRESH: ${error.message || 'Network error.'}`, true);
+    } finally {
+      socialBusy = false;
+      $('public-profile-follow').disabled = false;
+    }
+  };
   const recordTimeAttack = async (trackId, timeMs, carId, carSetup) => {
-    if (!client || !user) return;
+    if (!client || !user) return false;
     try {
       const { error } = await client.rpc('record_time_attack_car', {
         p_track_id: trackId,
@@ -392,10 +558,11 @@
         p_car_setup: carSetup
       });
       if (error) throw error;
-      return getFriendTimes(trackId);
+      return true;
     } catch (error) {
       console.error('Unable to save time attack:', error);
       if (modalOpen) setStatus(`TIME ATTACK SYNC FAILED: ${error.message}`);
+      return false;
     }
   };
   const getLeaderboard = async trackId => {
@@ -407,6 +574,7 @@
   };
 
   $('profile-button').addEventListener('click', open);
+  $('public-profile-follow').addEventListener('click', togglePublicFollow);
   $('profile-close').addEventListener('click', close);
   overlay.addEventListener('click', event => { if (event.target === overlay) close(); });
   document.addEventListener('keydown', event => {
@@ -422,30 +590,9 @@
     $('profile-name').required = creating;
     setStatus('');
   });
-  $('profile-avatars').addEventListener('click', event => {
-    const button = event.target.closest('[data-avatar]');
-    if (button) renderAvatarPicker(button.dataset.avatar);
-  });
   $('friend-search-button').addEventListener('click', searchFriends);
   $('friend-code-input').addEventListener('keydown', event => {
     if (event.key === 'Enter') { event.preventDefault(); searchFriends(); }
-  });
-  $('profile-avatar-edit').addEventListener('click', () => {
-    $('profile-avatar-editor').hidden = false;
-    renderAvatarPicker(profile?.avatar);
-  });
-  $('profile-avatar-save').addEventListener('click', async () => {
-    const avatar = $('profile-avatars').querySelector('.selected')?.dataset.avatar;
-    if (!avatar || !user || busy) return;
-    setBusy(true);
-    try {
-      const { error } = await client.from('profiles').update({ avatar }).eq('id', user.id);
-      if (error) { setStatus(`AVATAR UPDATE FAILED: ${error.message}`, true); return; }
-      await showStats();
-      refreshHeader();
-    } catch (error) {
-      setStatus(`AVATAR UPDATE FAILED: ${error.message || 'Network error.'}`, true);
-    } finally { setBusy(false); }
   });
   $('profile-signout').addEventListener('click', async () => {
     if (busy) return;
@@ -517,6 +664,7 @@
       user = session?.user || null;
       if (!user) {
         profile = null;
+        profileCarData = null;
         gameSaveSyncUser = null;
         refreshHeader();
         return;
@@ -544,6 +692,10 @@
     open,
     getFriendTimes,
     getLeaderboard,
-    recordTimeAttack
+    viewPublicProfile,
+    handleController,
+    recordTimeAttack,
+    isDevProfile,
+    renderCarAvatar
   };
 })();

@@ -1,5 +1,6 @@
 const SFX = (() => {
   let audio, master, engine, engineGain, squeal, squealGain, squealFilter;
+  let engineCarId = null;
   let enabled = true;
 
   function unlock() {
@@ -58,11 +59,23 @@ const SFX = (() => {
     osc.stop(now + duration);
   }
 
-  function update({ speed, throttle, slip, hand, active }) {
+  function update({ speed, throttle, slip, hand, active, carId }) {
     if (!audio || audio.state !== 'running') return;
     const now = audio.currentTime;
-    engine.frequency.setTargetAtTime(48 + Math.min(300, speed * 1.45) + throttle * 38, now, 0.06);
-    engineGain.gain.setTargetAtTime(active ? 0.045 + throttle * 0.025 : 0, now, 0.08);
+    const rotary = carId === 'rx7';
+    if (engineCarId !== carId) {
+      engine.type = rotary ? 'triangle' : 'sawtooth';
+      engineCarId = carId;
+    }
+    const pitch = rotary
+      ? 68 + Math.min(380, speed * 1.72) + throttle * 62
+      : 48 + Math.min(300, speed * 1.45) + throttle * 38;
+    engine.frequency.setTargetAtTime(pitch, now, rotary ? 0.045 : 0.06);
+    engineGain.gain.setTargetAtTime(
+      active ? (rotary ? 0.035 + throttle * 0.018 : 0.045 + throttle * 0.025) : 0,
+      now,
+      0.08
+    );
     squealFilter.frequency.setTargetAtTime(650 + Math.min(2400, slip * 24), now, 0.05);
     const intensity = active && speed > 30 && slip > 22 ? Math.min(0.13, (slip - 22) * 0.0014) : 0;
     squealGain.gain.setTargetAtTime(hand ? intensity * 1.35 : intensity, now, 0.07);
