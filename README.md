@@ -19,9 +19,11 @@ Then visit `http://localhost:8000/dwifft.html`.
 - **A / Left** and **D / Right:** steer
 - **Space:** handbrake (strong rear breakaway for wider, longer slides)
 - **R:** reset; **Escape / P:** return to the menu
-- **Menu:** W / S or the D-pad to choose; Enter / Space to confirm
+- **Menu:** W / S, D-pad, or left stick to choose; Enter / Space / Cross to
+  confirm; Escape / Circle / Options to go back
 - **Settings:** open from the main menu for control examples and the sound toggle
-- Standard gamepads are supported
+- Standard gamepads, including PS4 controllers in a supported browser, are
+  supported
 
 ## Modes
 

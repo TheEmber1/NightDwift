@@ -323,6 +323,7 @@
       { label: 'LEADERBOARDS', action: () => { menuMode = 'leaderboard'; leaderboardTrack = trackId; sel = 0; } },
       { label: 'FREEPLAY', action: () => start('free') },
       { label: 'GARAGE', action: () => { menuMode = 'garage'; sel = 0; } },
+      { label: 'PROFILE', action: () => Profile.open() },
       { label: 'SETTINGS', action: () => { menuMode = 'settings'; sel = 0; } }
     ];
     if (menuMode === 'tracks') return TRACKS.map(tr => ({
@@ -874,6 +875,8 @@
       menuItemsEl.hidden = showingLeaderboard;
       leaderboardView.hidden = !showingLeaderboard;
       if (showingLeaderboard) {
+        const restoreTabFocus = leaderboardView.contains(document.activeElement)
+          && document.activeElement.getAttribute('role') === 'tab';
         menuItemsEl.replaceChildren();
         const request = ++leaderboardRequest;
         leaderboardTabs.replaceChildren();
@@ -892,6 +895,9 @@
             paint();
           });
           leaderboardTabs.append(tab);
+        }
+        if (restoreTabFocus) {
+          leaderboardTabs.querySelector('.leaderboard-tab.selected')?.focus();
         }
         leaderboardRows.replaceChildren();
         const loading = document.createElement('p');

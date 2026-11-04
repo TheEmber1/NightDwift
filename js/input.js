@@ -22,15 +22,16 @@ const Input = (() => {
     let steer = kb;
     if (gp) { const a = clamp(dz(gp.axes[0]) + b(15) - b(14), -1, 1); if (a) steer = a; }
 
+    const lx = gp ? gp.axes[0] : 0;
     const ly = gp ? gp.axes[1] : 0;
     const raw = {
       up: any('ArrowUp', 'KeyW') || b(12) > .5 || ly < -.6,
       down: any('ArrowDown', 'KeyS') || b(13) > .5 || ly > .6,
-      left: any('ArrowLeft') || b(14) > .5,
-      right: any('ArrowRight') || b(15) > .5,
+      left: any('ArrowLeft') || b(14) > .5 || lx < -.6,
+      right: any('ArrowRight') || b(15) > .5 || lx > .6,
       ok: any('Enter', 'NumpadEnter', 'Space') || b(0) > .5,
       reset: !!K.KeyR || b(3) > .5,
-      menu: any('Escape', 'KeyP') || b(9) > .5
+      menu: any('Escape', 'KeyP') || b(9) > .5 || b(1) > .5
     };
     const p = {};
     for (const k in raw) { p[k] = !!raw[k] && !L[k]; L[k] = !!raw[k]; }
